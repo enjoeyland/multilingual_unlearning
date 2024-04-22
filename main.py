@@ -1,52 +1,59 @@
+print("Importing...")
 import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-checkpoint = "google/mt5-small"
+from torch.utils.data import Dataset
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments, EarlyStoppingCallback
+
+print("Loading Tokenizer & Model...")
+checkpoint = "google/mt5-base"
 
 tokenizer = AutoTokenizer.from_pretrained(checkpoint)
-model = AutoModelForSeq2SeqLM.from_pretrained(checkpoint)
-
-
-from datasets import load_dataset
-from torch.utils.data import DataLoader, Dataset
+model = AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=3)
 
 class XNLIDataset(Dataset):
-    def __init__(self, tokenizer, data):
-        self.encodings = tokenizer(data['premise'], data['hypothesis'], truncation=True, padding='max_length', max_length=256, return_tensors='pt')
-        start_token_id = tokenizer.pad_token_id
-        self.labels = self.encodings.input_ids.clone()
-        decoder_input_ids = torch.full_like(self.labels, start_token_id)
-        decoder_input_ids[:, 1:] = self.labels[:, :-1].clone()
-        self.encodings['labels'] = self.labels
-        self.encodings['decoder_input_ids'] = decoder_input_ids
+    def __init__(self, tokenizer, data, max_length):
+        self.tokenizer = tokenizer
+        self.data = data
+        self.max_length = max_length
+
+        self.encodings = self.tokenizer(self.data['premise'], self.data['hypothesis'], truncation=True, padding='max_length', max_length=self.max_length, return_tensors='pt')
+        self.encodings['labels'] = torch.tensor(self.data['label'])
 
     def __getitem__(self, idx):
-        return {key: val[idx] for key, val in self.encodings.items()}
+        item  = {key: val[idx] for key, val in self.encodings.items()}
+        return item
 
     def __len__(self):
-        return len(self.encodings.input_ids)
+        return len(self.data)
 
 
+print("Loading Dataset...")
 dataset = load_dataset("xnli", 'en')
-print("Tokenizing...", end="")
-train_dataset = XNLIDataset(tokenizer, dataset['train'])
-eval_dataset = XNLIDataset(tokenizer, dataset['validation'])
-print("Done")
 
+print("Tokenizing...", end='')
+train_dataset = XNLIDataset(tokenizer, dataset['train'], 512)
+eval_dataset = XNLIDataset(tokenizer, dataset['validation'], 512)
+print("OK")
 
-
-
-from transformers import Trainer, TrainingArguments
 
 
 training_args = TrainingArguments(
-  output_dir="./results",
-  evaluation_strategy="epoch",
-  learning_rate=2e-5,
-  per_device_train_batch_size=8,
-  per_device_eval_batch_size=8,
-  num_train_epochs=3,
-  weight_decay=0.01,
+    output_dir="./results",
+    evaluation_strategy="steps",
+    learning_rate=5e-5,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.1,
+    bf16=True,
+    bf16_full_eval=True,
+    gradient_accumulation_steps=4,
 
+    logging_steps=100,
+    eval_steps=500,
+    save_total_limit=10,
+    load_best_model_at_end = True,
+    overwrite_output_dir=True,
 )
 
 trainer = Trainer(
@@ -54,8 +61,10 @@ trainer = Trainer(
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
 )
 
+print("Start Training")
 trainer.train()
 
 
