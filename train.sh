@@ -3,6 +3,12 @@
 set -eou pipefail
 IFS=$'\n\t'
 
+world_size=1
+if [ -n "$1" ]; then
+    world_size=$1
+fi
+
+
 python run.py \
     --model_name mt5-base \
     --model google/mt5-base \
@@ -21,9 +27,10 @@ python run.py \
     --optimizer adamw \
     --learning_rate 5e-5 \
     --epochs 5 \
+    --world_size $world_size \
     --batch_size 8 \
-    --gradient_accumulation_steps 4 \
-    --logging_steps 500 \
-    --eval_steps 500 \
-    --output_dir "checkpoints/" \
-    --load_best_model_at_end
+    --gradient_accumulation_steps $((4 / world_size)) \
+    --logging_steps $((200 / world_size)) \
+    --eval_steps $((500 / world_size)) \
+    --max_tolerance 3 \
+    --output_dir "checkpoints/"

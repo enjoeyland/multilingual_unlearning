@@ -45,16 +45,17 @@ def add_arguments(parser):
     parser.add_argument("--learning_rate", default=0.001, type=float, help="Learning rate, default 0.001")
 
     parser.add_argument("--epochs", default=20, type=int, help="Train for the specified number of epochs, default 20")
+    parser.add_argument("--world_size", default=1, type=int, help="Number of GPUs to use, default 1")
     parser.add_argument("--batch_size", default=16, type=int, help="Batch size, default 16")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
 
     parser.add_argument("--logging_steps", type=int, default=10)
     parser.add_argument("--evaluation_strategy", default="steps", choices=["steps", "epoch", "no"], help="Evaluation strategy, default steps")
     parser.add_argument("--eval_steps", type=int, default=50)
+    parser.add_argument("--max_tolerance", type=int, default=3)
 
     parser.add_argument("--output_dir", type=str, default="checkpoints/")
     parser.add_argument("--save_strategies", default="epoch", choices=["epoch", "no"], help="Save strategies, default epoch")
-    parser.add_argument("--load_best_model_at_end", action="store_true", help="Load the best model at the end of training, default False")
 
 def main(args, model_path = None):
     L.seed_everything(args.seed, workers=True)
@@ -79,7 +80,7 @@ def main(args, model_path = None):
         mode="max",
         save_top_k=1,
         save_weights_only=True,
-        save_last=True,
+        save_last=False,
         save_on_train_epoch_end=True,
         dirpath=args.output_dir,
         filename=args.checkpoint_name,
@@ -88,13 +89,13 @@ def main(args, model_path = None):
 
     early_stopping = EarlyStopping(
         monitor="val_accuracy",
-        patience=3,
+        patience=args.max_tolerance,
         mode="max",
     )
 
     trainer = L.Trainer(
         default_root_dir=args.output_dir,
-        devices="auto",
+        devices=find_usable_cuda_devices(args.world_size),
         precision="bf16-mixed" if args.bf16 else "32-true",
         max_epochs=args.epochs,
         logger=wandb_logger,
@@ -128,7 +129,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     assert 2 * args.epochs >= args.slices + 1, "Not enough epochs per slice"
 
-    args.train_batch_size = args.batch_size * args.gradient_accumulation_steps
+    args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
 
     os.makedirs(args.cache_dir, exist_ok=True)
 
