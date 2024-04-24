@@ -1,5 +1,4 @@
-import json
-import os
+import torch
 import numpy as np
 import lightning as L
 
@@ -108,3 +107,46 @@ class MultilingualModel(L.LightningModule):
 
     def test_dataloader(self):
         return self._load_dataloader("test")
+    
+class ShardEnsembleModel(L.LightningModule):
+    def __init__(self, models, hparams):
+        super().__init__()
+        self.models = models
+        self.save_hyperparameters(hparams)
+        self.tokenizer = AutoTokenizer.from_pretrained(hparams.model, cache_dir=hparams.cache_dir)
+
+
+    def forward(self, input_ids, attention_mask=None, labels=None):
+        outputs = [model(input_ids, attention_mask=attention_mask, labels=labels) for model in self.models]
+        return outputs
+    
+    def training_step(self, batch, batch_idx):
+        outputs = self(*batch)
+        losses = [output.loss for output in outputs]
+        loss = sum(losses) / len(losses)
+        accuracies = [(output.logits.argmax(dim=-1) == batch["labels"]).float().mean() for output in outputs]
+        accuracy = sum(accuracies) / len(accuracies)
+        self.log_dict({"train_loss": loss, "train_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        return loss
+    
+    def test_step(self, batch, batch_idx):
+        outputs = self(*batch)
+        losses = [output.loss for output in outputs]
+        loss = sum(losses) / len(losses)
+        # Compute the accuracy by most voted class.
+        votes = torch.stack([output.logits.argmax(dim=-1) for output in outputs])
+        votes = votes.mode(dim=0).values
+        accuracy = (votes == batch["labels"]).float().mean()
+        self.log_dict({"test_loss": loss, "test_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        return loss
+
+    def configure_optimizers(self):
+        if self.hparams.optimizer == "adam":
+            optimizer = Adam(self.parameters(), lr=self.hparams.learning_rate)
+        elif self.hparams.optimizer == "adamw":
+            optimizer = AdamW(self.parameters(), lr=self.hparams.learning_rate)
+        elif self.hparams.optimizer == "sgd":
+            optimizer = SGD(self.parameters(), lr=self.hparams.learning_rate)
+        return {"optimizer": optimizer}
+    
+    

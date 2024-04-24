@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import lightning as L
 
+from glob import glob
 from datasets import load_dataset
 
 from lightning.pytorch.loggers import WandbLogger
@@ -12,8 +13,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 
-from models import MultilingualModel
-from dataset import sizeOfShard
+from models import MultilingualModel, ShardEnsembleModel
+from dataset import sizeOfShard, load_dataloader
 
 
 def add_arguments(parser):
@@ -63,7 +64,7 @@ def main(args, model_path = None):
     L.seed_everything(args.seed, workers=True)
 
     name = "/".join(args.output_dir.split("/")[4:])
-    if args.method in ["sisa", "sisa-retain"]:
+    if args.do_train and args.method in ["sisa", "sisa-retain"]:
         name += f"_sd{args.shard}"
     
     wandb_logger = WandbLogger(
@@ -72,10 +73,17 @@ def main(args, model_path = None):
         name=name,
         config=args,
     )
-    if model_path is None:
-        model = MultilingualModel(args)
-    else:
+
+    if model_path:
         model = MultilingualModel.load_from_checkpoint(model_path, hparams=args)
+    elif args.method == "sisa" and args.do_eval:
+        models = []
+        for shard in range(args.shards):
+            ckpt = os.path.join(args.output_dir, f"shard{shard}-slice{args.slices-1}.ckpt")
+            models.append(MultilingualModel.load_from_checkpoint(ckpt, hparams=args))
+        model = ShardEnsembleModel(models, args)
+    else:
+        model = MultilingualModel(args)
 
     checkpoint_callback = ModelCheckpoint(
         monitor="val_accuracy",
@@ -110,6 +118,10 @@ def main(args, model_path = None):
 
     if args.do_train:
         trainer.fit(model)
+    
+    if args.do_eval:
+        val_dataloaders = load_dataloader(args, model.tokenizer, "valid")
+        trainer.validate(model, dataloaders=val_dataloaders)
 
 def is_passable(args, shards_idx, slice_size,  shard, sl):
     shard_idx = np.array(shards_idx[shard])
@@ -136,16 +148,35 @@ if __name__ == "__main__":
     os.makedirs(args.cache_dir, exist_ok=True)
 
     args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
-
-    if args.method in ["sisa", "sisa-retain"]:
-        args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
-                    f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_SD{args.shards}_SL{args.slices}_S{args.seed}"
+    args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
+                    f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_S{args.seed}"
+    
+    if args.do_train and args.method in ["sisa", "sisa-retain"]:
+        args.output_dir += f"_SD{args.shards}_SL{args.slices}"
         os.makedirs(args.output_dir, exist_ok=True)
         epochs = args.epochs
+        do_eval = args.do_eval
+        args.do_eval = False
+
+        # Recovery
+        recovery_list = glob(f"{args.output_dir}/*.ckpt")
+        if recovery_list:
+            recovery_list.sort()
+            lastmodel = recovery_list[-1].split("/")[-1]
+            shard, sl = int(lastmodel.split("-")[0].split("d")[-1]), int(lastmodel.split("-")[1].split("e")[-1])
+            print(f"Recovery from {lastmodel}")
+            if sl == args.slices - 1:
+                shard += 1
+                sl = 0
+            else:
+                sl += 1
+        else:
+            shard, sl = 0, 0
 
         if args.method == "sisa-retain":
+            # load shards_idx from splitfile
             args.sisa_output_dir = f".checkpoints/{args.model_name}/{args.task}/sisa/" + \
-                f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_SD{args.shards}_SL{args.slices}_S{args.seed}"
+                f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_S{args.seed}_SD{args.shards}_SL{args.slices}"
             splitfile = os.path.join(f'{args.sisa_output_dir}', f'shard{args.shards}-splitfile.jsonl')
             if os.path.exists(splitfile):
                 with open(splitfile) as f:
@@ -154,42 +185,51 @@ if __name__ == "__main__":
             else:
                 raise FileNotFoundError(f"Splitfile {splitfile} not found.")
 
-        for shard in range(args.shards):
-            check_passable = True
-            for sl in range(args.slices):
-                if args.method == "sisa-retain":
-                    if check_passable:
-                        # 만약 forget 데이터가 한 slice에 없으면 pass
-                        shard_size = sizeOfShard(splitfile, shard)
-                        slice_size = shard_size // args.slices
-                        if is_passable(args, shards_idx, slice_size, shard, sl):
-                            print(f"Shard {shard} slice {sl} is passable")
-                            continue
-                        else:
-                            check_passable = False
-                            print(f"Shard {shard} slice {sl} has forget data")
-                    args.checkpoint_name = f"shard{shard}-slice{sl}-retain"
-                elif args.method == "sisa":
-                    args.checkpoint_name = f"shard{shard}-slice{sl}" 
+        for shard in range(shard, args.shards):
+            args.shard = shard
+            check_passable = (sl == 0)
+            for sl in range(sl, args.slices):
+                args.sl = sl
+
+                if check_passable and args.method == "sisa-retain":
+                    # 만약 forget 데이터가 한 slice에 없으면 pass
+                    shard_size = sizeOfShard(splitfile, shard)
+                    slice_size = shard_size // args.slices
+                    if is_passable(args, shards_idx, slice_size, shard, sl):
+                        print(f"Shard {shard} slice {sl} is passable")
+                        continue
+                    else:
+                        check_passable = False
+                        print(f"Shard {shard} slice {sl} has forget data")
+
+                args.checkpoint_name = f"shard{shard}-slice{sl}" 
 
                 avg_epochs_per_slice = (2 * epochs / (args.slices + 1)) # See paper for explanation.
                 slice_epochs = int((sl + 1) * avg_epochs_per_slice) - int(sl * avg_epochs_per_slice)
-                
-                args.shard = shard
-                args.sl = sl
                 args.epochs = slice_epochs
+
                 if sl == 0:
                     model_path = None
                 else:
                     model_path = os.path.join(args.output_dir, f"shard{shard}-slice{sl-1}.ckpt")
-                    if args.method == "sisa-retain":
-                        model_path = os.path.join(args.output_dir, f"shard{shard}-slice{sl-1}-retain.ckpt")
-                        if not os.path.exists(model_path):
-                            model_path = os.path.join(args.output_dir, f"shard{shard}-slice{sl-1}.ckpt")
+                    if args.method == "sisa-retain" and not os.path.exists(model_path):
+                        model_path = os.path.join(args.sisa_output_dir, f"shard{shard}-slice{sl-1}.ckpt")
 
                 main(args, model_path=model_path)
             else:
+                sl = 0
                 wandb.finish()
-
+        else:
+            args.do_eval = do_eval
+            if args.do_eval:
+                args.do_train = False
+                del args.shard, args.sl
+                main(args)
     else:
-        main(args)    
+        os.makedirs(args.output_dir, exist_ok=True)
+
+        main(args)
+
+# TODO: 폴더이름 수정 BS32_LR5e-05_E5_SD5_SL9_S42 -> BS32_LR5e-05_E5_S42_SD5_SL9
+# TODO: 파일이름 수정 shard0-slice0-retain.ckpt -> shard0-slice0.ckpt 
+# TODO: 중간부터 시작 가능하도록 하기
