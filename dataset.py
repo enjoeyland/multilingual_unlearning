@@ -3,16 +3,7 @@ import json
 import torch
 import numpy as np
 
-from datasets import load_dataset
-from torch.utils.data import Dataset, ConcatDataset, DataLoader
-
-XNLI_LANGUAGES = [
-    "ar",
-    "bg",
-    "de",
-    "el",
-    "en",
-]  # , "es", "fr", "hi", "ru", "sw", "th", "tr", "ur", "vi", "zh"]
+from torch.utils.data import Dataset, ConcatDataset
 
 class XNLIDataset(Dataset):
     def __init__(self, data, tokenizer, max_length, lang="en", add_prefix=True):
@@ -149,44 +140,3 @@ class MixedDataset(Dataset):
         data = self.combined_data[idx]
         is_forget = idx in self.forget_idx
         return data, is_forget
-
-
-def load_dataloader(args, tokenizer, split):
-    data = load_dataset(
-        "json", data_files=os.path.join(args.data_dir, f"_{args.task}/{split}.jsonl")
-    )["train"]
-
-    datasets = []
-    if args.task == "xnli":
-        for lang in XNLI_LANGUAGES:
-            dataset = XNLIDataset(
-                data, tokenizer, args.max_length, lang=lang, add_prefix=True
-            )
-            datasets.append(dataset)
-        if split == "valid":
-            forget_data = load_dataset(
-                "json",
-                data_files=os.path.join(
-                    args.data_dir, f"_{args.task}/forget-{args.forget_ratio}.jsonl"
-                ),
-            )["train"]
-            for lang in XNLI_LANGUAGES:
-                dataset = XNLIDataset(
-                    forget_data, tokenizer, args.max_length, lang=lang, add_prefix=True
-                )
-                datasets.append(dataset)
-    else:
-        raise NotImplementedError
-
-    dataloaders = []
-    for dataset in datasets:
-        dataloader = DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers,
-            pin_memory=True,
-        )
-        dataloaders.append(dataloader)
-
-    return dataloaders

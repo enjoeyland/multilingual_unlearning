@@ -13,8 +13,8 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 
-from models import MultilingualModel, ShardEnsembleModel
-from dataset import sizeOfShard, load_dataloader
+from models import MultilingualModel, ShardEnsembleModel, load_dataloader
+from dataset import sizeOfShard
 
 
 def add_arguments(parser):
@@ -56,6 +56,7 @@ def add_arguments(parser):
     parser.add_argument("--max_tolerance", type=int, default=3)
 
     parser.add_argument("--output_dir", type=str, default="checkpoints/")
+    parser.add_argument("--checkpoint_name", type=str, default="best")
 
     parser.add_argument("--do_eval", action="store_true", help="Perform evaluation on the validation set")
     parser.add_argument("--do_test", action="store_true", help="Perform evaluation on the test set")
@@ -120,7 +121,7 @@ def main(args, model_path = None):
         trainer.fit(model)
     
     if args.do_eval:
-        val_dataloaders = load_dataloader(args, model.tokenizer, "valid")
+        val_dataloaders, model.valid_dataset_names = load_dataloader(args, model.tokenizer, "valid")
         trainer.validate(model, dataloaders=val_dataloaders)
 
 def is_passable(args, shards_idx, slice_size,  shard, sl):
@@ -145,15 +146,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
     assert 2 * args.epochs >= args.slices + 1, "Not enough epochs per slice"
 
-    os.makedirs(args.cache_dir, exist_ok=True)
 
     args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
     args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
                     f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_S{args.seed}"
     
-    if args.do_train and args.method in ["sisa", "sisa-retain"]:
+    if args.method in ["sisa", "sisa-retain"]:
         args.output_dir += f"_SD{args.shards}_SL{args.slices}"
-        os.makedirs(args.output_dir, exist_ok=True)
+    
+    os.makedirs(args.cache_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    if args.do_train and args.method in ["sisa", "sisa-retain"]:
         epochs = args.epochs
         do_eval = args.do_eval
         args.do_eval = False
@@ -163,7 +167,7 @@ if __name__ == "__main__":
         if recovery_list:
             recovery_list.sort()
             lastmodel = recovery_list[-1].split("/")[-1]
-            shard, sl = int(lastmodel.split("-")[0].split("d")[-1]), int(lastmodel.split("-")[1].split("e")[-1])
+            shard, sl = int(lastmodel.split("-")[0].split("d")[-1]), int(lastmodel.split("-")[1].split("e")[-1].split(".")[0])
             print(f"Recovery from {lastmodel}")
             if sl == args.slices - 1:
                 shard += 1
@@ -226,10 +230,4 @@ if __name__ == "__main__":
                 del args.shard, args.sl
                 main(args)
     else:
-        os.makedirs(args.output_dir, exist_ok=True)
-
         main(args)
-
-# TODO: 폴더이름 수정 BS32_LR5e-05_E5_SD5_SL9_S42 -> BS32_LR5e-05_E5_S42_SD5_SL9
-# TODO: 파일이름 수정 shard0-slice0-retain.ckpt -> shard0-slice0.ckpt 
-# TODO: 중간부터 시작 가능하도록 하기

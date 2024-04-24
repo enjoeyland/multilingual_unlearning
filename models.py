@@ -1,7 +1,8 @@
+import os
 import torch
-import numpy as np
 import lightning as L
 
+from typing import List
 from pathlib import Path
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -11,6 +12,52 @@ from torch.utils.data import DataLoader
 
 from dataset import XNLIDataset, ShardDataset, sizeOfShard, MixedDataset, shard_data
 
+XNLI_LANGUAGES = [
+    "ar",
+    "bg",
+    "de",
+    "el",
+    "en",
+]  # , "es", "fr", "hi", "ru", "sw", "th", "tr", "ur", "vi", "zh"]
+
+def load_dataloader(args, tokenizer, split):
+    data = []
+    data_name = []
+    data.append(load_dataset(
+        "json", data_files=os.path.join(args.data_dir, f"_{args.task}/{split}.jsonl")
+    )["train"])
+    data_name.append(f"{split if split != 'valid' else 'val'}")
+    if split == "valid":
+        data.append(load_dataset(
+            "json", data_files=os.path.join(args.data_dir, f"_{args.task}/forget-{args.forget_ratio}.jsonl")
+        )["train"])
+        data_name.append(f"forget")
+
+    datasets = []
+    dataset_names = []
+    if args.task == "xnli":
+        for d, name in zip(data, data_name):
+            for lang in XNLI_LANGUAGES:
+                dataset = XNLIDataset(
+                    d, tokenizer, args.max_length, lang=lang, add_prefix=True
+                )
+                datasets.append(dataset)
+                dataset_names.append(f"{lang}/{name}")
+    else:
+        raise NotImplementedError
+
+    dataloaders = []
+    for dataset in datasets:
+        dataloader = DataLoader(
+            dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+        dataloaders.append(dataloader)
+
+    return dataloaders, dataset_names
 
 class MultilingualModel(L.LightningModule):
     def __init__(self, hparams):
@@ -31,18 +78,28 @@ class MultilingualModel(L.LightningModule):
         self.log_dict({"train_loss": loss, "train_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         loss = outputs.loss
         accuracy = (outputs.logits.argmax(dim=-1) == batch["labels"]).float().mean()
-        self.log_dict({"val_loss": loss, "val_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+
+        name = self.valid_dataset_names[dataloader_idx]
+        self.log_dict({
+            f"{name}_loss": loss,
+            f"{name}_accuracy": accuracy
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         loss = outputs.loss
         accuracy = (outputs.logits.argmax(dim=-1) == batch["labels"]).float().mean()
-        self.log_dict({"test_loss": loss, "test_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+
+        name = self.test_dataset_names[dataloader_idx]
+        self.log_dict({
+            f"{name}_loss": loss,
+            f"{name}_accuracy": accuracy
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
     def configure_optimizers(self):
@@ -56,17 +113,28 @@ class MultilingualModel(L.LightningModule):
 
 
     def _load_dataloader(self, split):
+        dataset_names = []
+        data = []
         if split in ["train", "valid", "test"]:
-            data = load_dataset(
+            dataset_names.append(f"{split if split != 'valid' else 'val'}")
+            data.append(load_dataset(
                 "json",
                 data_files=str((Path(__file__).parent / self.hparams.data_dir / f"_{self.hparams.task}/{split}.jsonl").resolve()),
-            )["train"]
+            )["train"])
+            
+        if split == "valid":
+            dataset_names.append(f"forget")
+            data.append(load_dataset(
+                "json",
+                data_files=str((Path(__file__).parent / self.hparams.data_dir / f"_{self.hparams.task}/forget-{self.hparams.forget_ratio}.jsonl").resolve()),
+            )["train"])
 
-        dataset = XNLIDataset(data, self.tokenizer, self.hparams.max_length)
+        datasets = [XNLIDataset(d, self.tokenizer, self.hparams.max_length) for d in data]
         if split in ["train"]:
-            return DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=True, num_workers=self.hparams.num_workers, pin_memory=True)    
+            dataloaders = [DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=True, num_workers=self.hparams.num_workers, pin_memory=True) for dataset in datasets]
         if split in ["valid", "test"]:
-            return DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=False, num_workers=self.hparams.num_workers, pin_memory=True)
+            dataloaders = [DataLoader(dataset, batch_size=self.hparams.batch_size, shuffle=False, num_workers=self.hparams.num_workers, pin_memory=True) for dataset in datasets]
+        return dataloaders, dataset_names
     
     def _load_shard_dataloader(self, split):
         retain_data = load_dataset(
@@ -96,17 +164,19 @@ class MultilingualModel(L.LightningModule):
 
     def train_dataloader(self):
         if self.hparams.method == "original":
-            return self._load_dataloader("train")
+            return self._load_dataloader("train")[0]
         elif self.hparams.method == "sisa":
             return self._load_shard_dataloader("train")
         elif self.hparams.method == "sisa-retain":
             return self._load_shard_dataloader("retain")
 
     def val_dataloader(self):
-        return self._load_dataloader("valid")
+        dataloader, self.valid_dataset_names = self._load_dataloader("valid")
+        return dataloader
 
     def test_dataloader(self):
-        return self._load_dataloader("test")
+        dataloader, self.test_dataset_names = self._load_dataloader("test")
+        return dataloader
     
 class ShardEnsembleModel(L.LightningModule):
     def __init__(self, models, hparams):
@@ -129,7 +199,7 @@ class ShardEnsembleModel(L.LightningModule):
         self.log_dict({"train_loss": loss, "train_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
     
-    def test_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(*batch)
         losses = [output.loss for output in outputs]
         loss = sum(losses) / len(losses)
@@ -137,7 +207,28 @@ class ShardEnsembleModel(L.LightningModule):
         votes = torch.stack([output.logits.argmax(dim=-1) for output in outputs])
         votes = votes.mode(dim=0).values
         accuracy = (votes == batch["labels"]).float().mean()
-        self.log_dict({"test_loss": loss, "test_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+
+        name = self.valid_dataset_names[dataloader_idx]
+        self.log_dict({
+            f"{name}_loss": loss,
+            f"{name}_accuracy": accuracy
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        return loss
+
+    def test_step(self, batch, batch_idx, dataloader_idx=0):
+        outputs = self(*batch)
+        losses = [output.loss for output in outputs]
+        loss = sum(losses) / len(losses)
+        # Compute the accuracy by most voted class.
+        votes = torch.stack([output.logits.argmax(dim=-1) for output in outputs])
+        votes = votes.mode(dim=0).values
+        accuracy = (votes == batch["labels"]).float().mean()
+
+        name = self.test_dataset_names[dataloader_idx]
+        self.log_dict({
+            f"{name}_loss": loss,
+            f"{name}_accuracy": accuracy
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         return loss
 
     def configure_optimizers(self):
