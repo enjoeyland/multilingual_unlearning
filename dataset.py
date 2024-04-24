@@ -105,25 +105,25 @@ def sizeOfShard(splitfile, shard):
 
 class ShardDataset(Dataset):
     def __init__(self, splitfile, shard, mixed_dataset, split, offset=0, until=None):
-        self.shard = get_shard(splitfile, shard).tolist()
+        self.shard = get_shard(splitfile, shard)
         self.mixed_dataset = mixed_dataset
         self.split = split
         self.offset = offset
         self.until = until if until is not None else len(self.shard)
 
+        self.slice = self.shard[self.offset:self.until]
+        if self.split == "retain":
+            self.slice = self.slice[self.slice >= self.mixed_dataset.retain_start_idx]
+        self.slice = self.slice.tolist()
+
     def __len__(self):
-        return self.until - self.offset
+        return len(self.slice)
 
     def __getitem__(self, idx):
-        actual_idx = self.offset + idx
-        if actual_idx >= self.until:
+        if idx > len(self.slice):
             raise IndexError("Index out of the bounds of the data segment.")
-        shard_idx = self.shard[actual_idx]
-        item, is_forget = self.mixed_dataset[shard_idx]
-        if self.split == "retain" and  is_forget:
-            return None
-        else:
-            return item
+        item, _ = self.mixed_dataset[self.slice[idx]]
+        return item
         
 class MixedDataset(Dataset):
     def __init__(self, retain_data, forget_data):

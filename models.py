@@ -101,7 +101,7 @@ class MultilingualModel(L.LightningModule):
         elif self.hparams.method == "sisa":
             return self._load_shard_dataloader("train")
         elif self.hparams.method == "sisa-retain":
-            raise self._load_shard_dataloader("retain")
+            return self._load_shard_dataloader("retain")
 
     def val_dataloader(self):
         return self._load_dataloader("valid")

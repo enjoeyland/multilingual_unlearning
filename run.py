@@ -142,7 +142,9 @@ if __name__ == "__main__":
         epochs = args.epochs
 
         if args.method == "sisa-retain":
-            splitfile = os.path.join(f'{args.output_dir}', f'shard{args.shards}-splitfile.jsonl')
+            args.sisa_output_dir = f".checkpoints/{args.model_name}/{args.task}/sisa/" + \
+                f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_SD{args.shards}_SL{args.slices}_S{args.seed}"
+            splitfile = os.path.join(f'{args.sisa_output_dir}', f'shard{args.shards}-splitfile.jsonl')
             if os.path.exists(splitfile):
                 with open(splitfile) as f:
                     shards_idx = f.readlines()
@@ -151,14 +153,19 @@ if __name__ == "__main__":
                 raise FileNotFoundError(f"Splitfile {splitfile} not found.")
 
         for shard in range(args.shards):
+            check_passable = True
             for sl in range(args.slices):
                 if args.method == "sisa-retain":
-                    # 만약 forget 데이터가 한 slice에 없으면 pass
-                    shard_size = sizeOfShard(splitfile, shard)
-                    slice_size = shard_size // args.slices
-                    if is_passable(args, shards_idx, slice_size, shard, sl):
-                        print(f"Shard {shard} slice {sl} is passable")
-                        continue
+                    if check_passable:
+                        # 만약 forget 데이터가 한 slice에 없으면 pass
+                        shard_size = sizeOfShard(splitfile, shard)
+                        slice_size = shard_size // args.slices
+                        if is_passable(args, shards_idx, slice_size, shard, sl):
+                            print(f"Shard {shard} slice {sl} is passable")
+                            continue
+                        else:
+                            check_passable = False
+                            print(f"Shard {shard} slice {sl} has forget data")
                     args.checkpoint_name = f"shard{shard}-slice{sl}-retain"
                 elif args.method == "sisa":
                     args.checkpoint_name = f"shard{shard}-slice{sl}" 
