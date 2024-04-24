@@ -5,11 +5,10 @@ IFS=$'\n\t'
 
 world_size=1
 
-
 python run.py \
     --model_name mt5-base \
     --model google/mt5-base \
-    --method sisa-retain \
+    --method sisa \
     --cache_dir ../.cache \
     --task xnli \
     --max_length 512 \
@@ -18,7 +17,7 @@ python run.py \
     --num_workers 4 \
     --shards 5 \
     --slices 9 \
-    --train \
+    --do_train \
     --seed 42 \
     --bf16 \
     --optimizer adamw \

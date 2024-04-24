@@ -122,7 +122,8 @@ class ShardDataset(Dataset):
     def __getitem__(self, idx):
         if idx > len(self.slice):
             raise IndexError("Index out of the bounds of the data segment.")
-        item, _ = self.mixed_dataset[self.slice[idx]]
+        item, is_forget = self.mixed_dataset[self.slice[idx]]
+        assert not is_forget
         return item
         
 class MixedDataset(Dataset):

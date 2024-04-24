@@ -36,11 +36,9 @@ def add_arguments(parser):
 
 
     # Training arguments
-    parser.add_argument("--train", action="store_true", help="Perform SISA training on the shard")
-    parser.add_argument("--test", action="store_true", help="Compute shard predictions")
-    
+    parser.add_argument("--do_train", action="store_true", help="Perform training")
     parser.add_argument("--seed", type=int, default=42)
-
+    
     parser.add_argument("--bf16", action="store_true")
 
     parser.add_argument("--optimizer", default="sgd", help="Optimizer, default sgd")
@@ -57,7 +55,9 @@ def add_arguments(parser):
     parser.add_argument("--max_tolerance", type=int, default=3)
 
     parser.add_argument("--output_dir", type=str, default="checkpoints/")
-    parser.add_argument("--save_strategies", default="epoch", choices=["epoch", "no"], help="Save strategies, default epoch")
+
+    parser.add_argument("--do_eval", action="store_true", help="Perform evaluation on the validation set")
+    parser.add_argument("--do_test", action="store_true", help="Perform evaluation on the test set")
 
 def main(args, model_path = None):
     L.seed_everything(args.seed, workers=True)
@@ -107,7 +107,9 @@ def main(args, model_path = None):
         callbacks=[checkpoint_callback, early_stopping],
         accumulate_grad_batches=args.gradient_accumulation_steps,
     )
-    trainer.fit(model)
+
+    if args.do_train:
+        trainer.fit(model)
 
 def is_passable(args, shards_idx, slice_size,  shard, sl):
     shard_idx = np.array(shards_idx[shard])
@@ -131,9 +133,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     assert 2 * args.epochs >= args.slices + 1, "Not enough epochs per slice"
 
-    args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
-
     os.makedirs(args.cache_dir, exist_ok=True)
+
+    args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
 
     if args.method in ["sisa", "sisa-retain"]:
         args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
