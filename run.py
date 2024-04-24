@@ -1,5 +1,6 @@
 import os
 import json
+import wandb
 import argparse
 import numpy as np
 import lightning as L
@@ -9,6 +10,7 @@ from datasets import load_dataset
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+from lightning.pytorch.accelerators import find_usable_cuda_devices
 
 from models import MultilingualModel
 from dataset import sizeOfShard
@@ -62,7 +64,7 @@ def main(args, model_path = None):
 
     name = "/".join(args.output_dir.split("/")[4:])
     if args.method in ["sisa", "sisa-retain"]:
-        name += f"_sd{args.shard}_sl{args.sl}"
+        name += f"_sd{args.shard}"
     
     wandb_logger = WandbLogger(
         project="multilinugal-unlearning",
@@ -177,5 +179,8 @@ if __name__ == "__main__":
                             model_path = os.path.join(args.output_dir, f"shard{shard}-slice{sl-1}.ckpt")
 
                 main(args, model_path=model_path)
+            else:
+                wandb.finish()
+
     else:
         main(args)    
