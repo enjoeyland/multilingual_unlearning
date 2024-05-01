@@ -191,7 +191,7 @@ class ShardEnsembleModel(L.LightningModule):
         return outputs
     
     def training_step(self, batch, batch_idx):
-        outputs = self(*batch)
+        outputs = self(**batch)
         losses = [output.loss for output in outputs]
         loss = sum(losses) / len(losses)
         accuracies = [(output.logits.argmax(dim=-1) == batch["labels"]).float().mean() for output in outputs]
@@ -200,7 +200,7 @@ class ShardEnsembleModel(L.LightningModule):
         return loss
     
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        outputs = self(*batch)
+        outputs = self(**batch)
         losses = [output.loss for output in outputs]
         loss = sum(losses) / len(losses)
         # Compute the accuracy by most voted class.
