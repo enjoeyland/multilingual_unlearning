@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
     args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
     args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
-                    f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_S{args.seed}"
+                    f"BS{args.train_batch_size}_LR{args.learning_rate}_W{args.warmup_ratio}_S{args.seed}"
     
     if args.method in ["sisa", "sisa-retain"]:
         args.output_dir += f"_SD{args.shards}_SL{args.slices}"
@@ -181,7 +181,7 @@ if __name__ == "__main__":
         if args.method == "sisa-retain":
             # load shards_idx from splitfile
             args.sisa_output_dir = f".checkpoints/{args.model_name}/{args.task}/sisa/" + \
-                f"BS{args.train_batch_size}_LR{args.learning_rate}_E{args.epochs}_S{args.seed}_SD{args.shards}_SL{args.slices}"
+                f"BS{args.train_batch_size}_LR{args.learning_rate}_W{args.warmup_ratio}_S{args.seed}_SD{args.shards}_SL{args.slices}"
             splitfile = os.path.join(f'{args.sisa_output_dir}', f'shard{args.shards}-splitfile.jsonl')
             if os.path.exists(splitfile):
                 with open(splitfile) as f:
