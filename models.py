@@ -1,8 +1,8 @@
 import torch
 import lightning as L
 
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from torch.optim import AdamW, Adam, SGD
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
+from torch.optim import AdamW, Adam
 
 from datamodules import XNLIDataModule
 
@@ -54,15 +54,25 @@ class MultilingualModel(L.LightningModule):
             optimizer = Adam(self.model.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
             optimizer = AdamW(self.model.parameters(), lr=self.hparams.learning_rate)
-        elif self.hparams.optimizer == "sgd":
-            optimizer = SGD(self.model.parameters(), lr=self.hparams.learning_rate)
         else:
             raise NotImplementedError(f"Optimizer {self.hparams.optimizer} not implemented.")
         
         if self.hparams.lr_scheduler_type == "linear":
-            lr_scheduler = L.lr_schedulers.LinearWarmup(optimizer, warmup_ratio=self.hparams.warmup_ratio)
+            lr_scheduler = get_linear_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=int(
+                    self.hparams.warmup_ratio * self.trainer.estimated_stepping_batches
+                ),
+                num_training_steps=self.trainer.estimated_stepping_batches,
+            )
         elif self.hparams.lr_scheduler_type == "cosine":
-            lr_scheduler = L.lr_schedulers.CosineWarmup(optimizer, warmup_ratio=self.hparams.warmup_ratio)
+            lr_scheduler = get_cosine_schedule_with_warmup(
+                optimizer,
+                num_warmup_steps=int(
+                    self.hparams.warmup_ratio * self.trainer.estimated_stepping_batches
+                ),
+                num_training_steps=self.trainer.estimated_stepping_batches,
+            )
         else:
             raise NotImplementedError(f"LR scheduler {self.hparams.lr_scheduler_type} not implemented.")
         
