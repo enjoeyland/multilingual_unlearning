@@ -42,8 +42,10 @@ def add_arguments(parser):
     
     parser.add_argument("--bf16", action="store_true")
 
-    parser.add_argument("--optimizer", default="sgd", help="Optimizer, default sgd")
+    parser.add_argument("--optimizer", default="adamw", choices=["adam", "adamw", "sgd"], help="Optimizer to use, default adamw")
     parser.add_argument("--learning_rate", default=0.001, type=float, help="Learning rate, default 0.001")
+    parser.add_argument("--lr_scheduler_type", default="linear", choices=["linear", "cosine"], help="Learning rate scheduler type, default linear")
+    parser.add_argument("--warmup_ratio", default=0.1, type=float, help="Warmup ratio, default 0.1")
 
     parser.add_argument("--epochs", default=20, type=int, help="Train for the specified number of epochs, default 20")
     parser.add_argument("--world_size", default=1, type=int, help="Number of GPUs to use, default 1")

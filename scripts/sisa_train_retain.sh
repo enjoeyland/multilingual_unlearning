@@ -23,6 +23,8 @@ python run.py \
     --bf16 \
     --optimizer adamw \
     --learning_rate 5e-5 \
+    --lr_scheduler_type linear \
+    --warmup_ratio 0.1 \
     --epochs 5 \
     --world_size $world_size \
     --batch_size 8 \

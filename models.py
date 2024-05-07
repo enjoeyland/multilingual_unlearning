@@ -56,7 +56,25 @@ class MultilingualModel(L.LightningModule):
             optimizer = AdamW(self.model.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "sgd":
             optimizer = SGD(self.model.parameters(), lr=self.hparams.learning_rate)
-        return {"optimizer": optimizer}
+        else:
+            raise NotImplementedError(f"Optimizer {self.hparams.optimizer} not implemented.")
+        
+        if self.hparams.lr_scheduler_type == "linear":
+            lr_scheduler = L.lr_schedulers.LinearWarmup(optimizer, warmup_ratio=self.hparams.warmup_ratio)
+        elif self.hparams.lr_scheduler_type == "cosine":
+            lr_scheduler = L.lr_schedulers.CosineWarmup(optimizer, warmup_ratio=self.hparams.warmup_ratio)
+        else:
+            raise NotImplementedError(f"LR scheduler {self.hparams.lr_scheduler_type} not implemented.")
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "step",
+                "frequency": 1,
+                "monitor": "val_loss"
+            }
+        }
 
 
     
