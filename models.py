@@ -87,7 +87,7 @@ class MultilingualModel(L.LightningModule):
         self.log_dict({
             f"{name}_loss": loss,
             f"{name}_accuracy": accuracy
-        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
         return loss
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
@@ -99,7 +99,7 @@ class MultilingualModel(L.LightningModule):
         self.log_dict({
             f"{name}_loss": loss,
             f"{name}_accuracy": accuracy
-        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
         return loss
 
     def configure_optimizers(self):
@@ -212,11 +212,11 @@ class ShardEnsembleModel(L.LightningModule):
         self.log_dict({
             f"{name}_loss": loss,
             f"{name}_accuracy": accuracy
-        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
         return loss
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
-        outputs = self(*batch)
+        outputs = self(**batch)
         losses = [output.loss for output in outputs]
         loss = sum(losses) / len(losses)
         # Compute the accuracy by most voted class.
@@ -228,7 +228,7 @@ class ShardEnsembleModel(L.LightningModule):
         self.log_dict({
             f"{name}_loss": loss,
             f"{name}_accuracy": accuracy
-        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
         return loss
 
     def configure_optimizers(self):
