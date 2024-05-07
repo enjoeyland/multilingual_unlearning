@@ -13,7 +13,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 
-from models import MultilingualModel, ShardEnsembleModel, load_dataloader
+from models import MultilingualModel, ShardEnsembleModel
 from dataset import sizeOfShard
 
 
@@ -118,11 +118,10 @@ def main(args, model_path = None):
     )
 
     if args.do_train:
-        trainer.fit(model)
+        trainer.fit(model, datamodule=model.datamodule)
     
     if args.do_eval:
-        val_dataloaders, model.valid_dataset_names = load_dataloader(args, model.tokenizer, "valid")
-        trainer.validate(model, dataloaders=val_dataloaders)
+        trainer.validate(model, datamodule=model.datamodule)
 
 def is_passable(args, shards_idx, slice_size,  shard, sl):
     shard_idx = np.array(shards_idx[shard])
