@@ -31,10 +31,10 @@ class XNLIDataModule(L.LightningDataModule):
         self.data_dir = args.data_dir
         self.num_workers = args.num_workers
 
-        self.batch_size = args.batch_size
+        self.batch_size = args.per_device_batch_size
 
-
-    def prepare_data(self):
+    def setup(self, stage):
+        # Load data
         self.data_name = {}
         self.data = {}
         
@@ -50,7 +50,7 @@ class XNLIDataModule(L.LightningDataModule):
                 "json", data_files=str((Path(__file__).parent / self.data_dir / f"_{self.task}/{split}-{self.forget_ratio}.jsonl").resolve()),
             )["train"]
 
-    def setup(self, stage):
+        # Prepare datasets
         self.datasets = defaultdict(list)
         self.dataset_names = defaultdict(list)
     

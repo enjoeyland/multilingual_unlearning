@@ -1,6 +1,7 @@
 import os
 import json
 import wandb
+import torch
 import argparse
 import numpy as np
 import lightning as L
@@ -12,6 +13,9 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.accelerators import find_usable_cuda_devices
+from lightning.pytorch.strategies import FSDPStrategy
+from transformers.models.mt5.modeling_mt5 import MT5Block
+from torch.distributed.fsdp import MixedPrecision
 
 from models import MultilingualModel, ShardEnsembleModel
 from dataset import sizeOfShard
@@ -39,7 +43,8 @@ def add_arguments(parser):
     # Training arguments
     parser.add_argument("--do_train", action="store_true", help="Perform training")
     parser.add_argument("--seed", type=int, default=42)
-    
+
+    parser.add_argument("--dp_strategy", default="auto", choices=["auto", "ddp", "fsdp"], help="Distributed training strategy, default auto")
     parser.add_argument("--bf16", action="store_true")
 
     parser.add_argument("--optimizer", default="adamw", choices=["adam", "adamw"], help="Optimizer to use, default adamw")
@@ -49,7 +54,7 @@ def add_arguments(parser):
 
     parser.add_argument("--epochs", default=20, type=int, help="Train for the specified number of epochs, default 20")
     parser.add_argument("--world_size", default=1, type=int, help="Number of GPUs to use, default 1")
-    parser.add_argument("--batch_size", default=16, type=int, help="Batch size, default 16")
+    parser.add_argument("--per_device_batch_size", default=16, type=int, help="Batch size, default 16")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
 
     parser.add_argument("--logging_steps", type=int, default=10)
@@ -63,13 +68,13 @@ def add_arguments(parser):
     parser.add_argument("--do_eval", action="store_true", help="Perform evaluation on the validation set")
     parser.add_argument("--do_test", action="store_true", help="Perform evaluation on the test set")
 
-def main(args, model_path = None):
+def main(args, model_path=None):
     L.seed_everything(args.seed, workers=True)
 
     name = "/".join(args.output_dir.split("/")[4:])
     if args.do_train and args.method in ["sisa", "sisa-retain"]:
         name += f"_sd{args.shard}"
-    
+
     wandb_logger = WandbLogger(
         project="multilinugal-unlearning",
         group="/".join(args.output_dir.split("/")[1:4]),
@@ -87,6 +92,21 @@ def main(args, model_path = None):
         model = ShardEnsembleModel(models, args)
     else:
         model = MultilingualModel(args)
+
+    # # print model summary
+    # from lightning.pytorch.utilities.model_summary import ModelSummary
+    # print(ModelSummary(model, max_depth=5))
+    # print(type(model.model.transformer.encoder))
+    # quit()
+
+    if args.dp_strategy == "fsdp":
+        strategy = FSDPStrategy(
+            auto_wrap_policy={MT5Block},
+            mixed_precision=MixedPrecision(param_dtype=torch.bfloat16, cast_forward_inputs=True) if args.bf16 else None,
+            sharding_strategy="FULL_SHARD",
+        )        
+    else:
+        strategy = args.dp_strategy
 
     checkpoint_callback = ModelCheckpoint(
         monitor="val_accuracy",
@@ -107,25 +127,27 @@ def main(args, model_path = None):
     )
 
     trainer = L.Trainer(
-        default_root_dir=args.output_dir,
+        strategy=strategy,
         devices=find_usable_cuda_devices(args.world_size),
         precision="bf16-mixed" if args.bf16 else "32-true",
-        max_epochs=args.epochs,
-        logger=wandb_logger,
-        gradient_clip_val=1.0,
-        log_every_n_steps=args.logging_steps,
-        val_check_interval=args.eval_steps,
-        callbacks=[checkpoint_callback, early_stopping],
+        gradient_clip_val=1.0 if args.dp_strategy != "fsdp" else None,
         accumulate_grad_batches=args.gradient_accumulation_steps,
+        max_epochs=args.epochs,
+        val_check_interval=args.eval_steps,
+        logger=wandb_logger,
+        log_every_n_steps=args.logging_steps,
+        callbacks=[checkpoint_callback, early_stopping],
+        default_root_dir=args.output_dir,
     )
 
     if args.do_train:
         trainer.fit(model, datamodule=model.datamodule)
-    
+
     if args.do_eval:
         trainer.validate(model, datamodule=model.datamodule)
 
-def is_passable(args, shards_idx, slice_size,  shard, sl):
+
+def is_passable(args, shards_idx, slice_size, shard, sl):
     shard_idx = np.array(shards_idx[shard])
     offset = sl * slice_size
     until = (sl + 1) * slice_size if sl < args.slices - 1 else len(shard_idx)
@@ -141,6 +163,7 @@ def is_passable(args, shards_idx, slice_size,  shard, sl):
  
     return np.all(slice_idx >= retain_start_idx)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     add_arguments(parser)
@@ -148,13 +171,13 @@ if __name__ == "__main__":
     assert 2 * args.epochs >= args.slices + 1, "Not enough epochs per slice"
 
 
-    args.train_batch_size = args.world_size * args.batch_size * args.gradient_accumulation_steps
+    args.train_batch_size = (args.world_size if args.dp_strategy != "fsdp" else 1) * args.per_device_batch_size * args.gradient_accumulation_steps
     args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
                     f"BS{args.train_batch_size}_LR{args.learning_rate}_W{args.warmup_ratio}_S{args.seed}"
     
     if args.method in ["sisa", "sisa-retain"]:
         args.output_dir += f"_SD{args.shards}_SL{args.slices}"
-    
+
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -192,7 +215,7 @@ if __name__ == "__main__":
 
         for shard in range(shard, args.shards):
             args.shard = shard
-            check_passable = (sl == 0)
+            check_passable = sl == 0
             for sl in range(sl, args.slices):
                 args.sl = sl
 

@@ -6,6 +6,7 @@ from torch.optim import AdamW, Adam
 
 from datamodules import XNLIDataModule
 
+
 class MultilingualModel(L.LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -13,7 +14,19 @@ class MultilingualModel(L.LightningModule):
         
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.model, cache_dir=hparams.cache_dir)
         self.datamodule = XNLIDataModule(hparams, self.tokenizer)
-        self.model = AutoModelForSequenceClassification.from_pretrained(hparams.model, num_labels=self.datamodule.num_classes, cache_dir=hparams.cache_dir)
+        self.model = None
+        # self.model = AutoModelForSequenceClassification.from_pretrained(self.hparams.model, num_labels=self.datamodule.num_classes,cache_dir=self.hparams.cache_dir)
+
+
+    def configure_model(self):
+        if self.model is not None:
+            return
+
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            self.hparams.model,
+            num_labels=self.datamodule.num_classes,
+            cache_dir=self.hparams.cache_dir,
+        )
 
     def forward(self, input_ids, attention_mask=None, labels=None):
         return self.model(input_ids, attention_mask=attention_mask, labels=labels)
@@ -82,12 +95,11 @@ class MultilingualModel(L.LightningModule):
                 "scheduler": lr_scheduler,
                 "interval": "step",
                 "frequency": 1,
-                "monitor": "val_loss"
-            }
+                "monitor": "val_loss",
+            },
         }
 
 
-    
 class ShardEnsembleModel(L.LightningModule):
     def __init__(self, models, hparams):
         super().__init__()
@@ -99,7 +111,7 @@ class ShardEnsembleModel(L.LightningModule):
     def forward(self, input_ids, attention_mask=None, labels=None):
         outputs = [model(input_ids, attention_mask=attention_mask, labels=labels) for model in self.models]
         return outputs
-    
+
     def training_step(self, batch, batch_idx):
         outputs = self(**batch)
         losses = [output.loss for output in outputs]
@@ -108,7 +120,7 @@ class ShardEnsembleModel(L.LightningModule):
         accuracy = sum(accuracies) / len(accuracies)
         self.log_dict({"train_loss": loss, "train_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
         return loss
-    
+
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         losses = [output.loss for output in outputs]
@@ -146,8 +158,4 @@ class ShardEnsembleModel(L.LightningModule):
             optimizer = Adam(self.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
             optimizer = AdamW(self.parameters(), lr=self.hparams.learning_rate)
-        elif self.hparams.optimizer == "sgd":
-            optimizer = SGD(self.parameters(), lr=self.hparams.learning_rate)
         return {"optimizer": optimizer}
-    
-    

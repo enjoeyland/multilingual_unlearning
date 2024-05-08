@@ -20,6 +20,7 @@ python run.py \
     --slices 9 \
     --do_train \
     --seed 42 \
+    --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
     --learning_rate 5e-5 \
@@ -27,7 +28,7 @@ python run.py \
     --warmup_ratio 0.1 \
     --epochs 5 \
     --world_size $world_size \
-    --batch_size 8 \
+    --per_device_batch_size 8 \
     --gradient_accumulation_steps $((4 / world_size)) \
     --logging_steps $((200 / world_size)) \
     --eval_steps $((500 / world_size)) \
