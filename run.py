@@ -13,13 +13,12 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 from lightning.pytorch.accelerators import find_usable_cuda_devices
-from lightning.pytorch.strategies import FSDPStrategy
+from lightning.pytorch.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers.models.mt5.modeling_mt5 import MT5Block
 from torch.distributed.fsdp import MixedPrecision
 
 from models import MultilingualModel, ShardEnsembleModel
 from dataset import sizeOfShard
-
 
 def add_arguments(parser):
     # Model arguments
@@ -44,7 +43,9 @@ def add_arguments(parser):
     parser.add_argument("--do_train", action="store_true", help="Perform training")
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--dp_strategy", default="auto", choices=["auto", "ddp", "fsdp"], help="Distributed training strategy, default auto")
+    parser.add_argument("--dp_strategy", default="auto", help="Distributed training strategy, default auto",
+                        choices=["auto", "ddp", "fsdp", "deepspeed", "deepspeed_stage_3", "deepspeed_stage_3_offload"])
+    parser.add_argument("--dp_config", help="DeepSpeed config file, default None")
     parser.add_argument("--bf16", action="store_true")
 
     parser.add_argument("--optimizer", default="adamw", choices=["adam", "adamw"], help="Optimizer to use, default adamw")
@@ -104,7 +105,9 @@ def main(args, model_path=None):
             auto_wrap_policy={MT5Block},
             mixed_precision=MixedPrecision(param_dtype=torch.bfloat16, cast_forward_inputs=True) if args.bf16 else None,
             sharding_strategy="FULL_SHARD",
-        )        
+        )
+    if "deepspeed" in args.dp_strategy and args.dp_config:
+        strategy = DeepSpeedStrategy(config=args.dp_config)
     else:
         strategy = args.dp_strategy
 
@@ -170,8 +173,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     assert 2 * args.epochs >= args.slices + 1, "Not enough epochs per slice"
 
-
-    args.train_batch_size = (args.world_size if args.dp_strategy != "fsdp" else 1) * args.per_device_batch_size * args.gradient_accumulation_steps
+    args.train_batch_size = (args.world_size if args.dp_strategy in ["auto", "ddp"] else 1) * args.per_device_batch_size * args.gradient_accumulation_steps
     args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
                     f"BS{args.train_batch_size}_LR{args.learning_rate}_W{args.warmup_ratio}_S{args.seed}"
     

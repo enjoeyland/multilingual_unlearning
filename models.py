@@ -3,6 +3,7 @@ import lightning as L
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
 from torch.optim import AdamW, Adam
+from deepspeed.ops.adam import FusedAdam
 
 from datamodules import XNLIDataModule
 
@@ -63,7 +64,10 @@ class MultilingualModel(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        if self.hparams.optimizer == "adam":
+        if self.hparams.dp_strategy == "deepspeed_stage_3":
+            optimizer = FusedAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
+                                  adam_w_mode=(self.hparams.optimizer == "adamw")) 
+        elif self.hparams.optimizer == "adam":
             optimizer = Adam(self.model.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
             optimizer = AdamW(self.model.parameters(), lr=self.hparams.learning_rate)
