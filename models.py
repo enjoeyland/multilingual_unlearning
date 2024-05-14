@@ -1,7 +1,7 @@
 import torch
 import lightning as L
 
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, BitsAndBytesConfig
 from torch.optim import AdamW, Adam
 from deepspeed.ops.adam import FusedAdam
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -27,13 +27,20 @@ class MultilingualModel(L.LightningModule):
         if self.model is not None:
             return
         
-        if "mt5 "in self.hparams.model:
-            self.model = load_model(self.hparams, AutoModelForSequenceClassification, "SEQ_CLS")
-        elif "bloom" in self.hparams.model:
-            # self.model = load_model(self.hparams, AutoModelForSequenceClassification, "CAUSAL_LM")
-            raise NotImplementedError(f"Model {self.hparams.model} not implemented.")
+
+        if "mt5" in self.hparams.model_name:
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        elif "bloom" in self.hparams.model_name:
+            # target_modules = ["query_key_value", "dense", "dense_h_to_4h", "dense_4h_to_h"]
+            target_modules = ["query_key_value"]
         else:
-            raise NotImplementedError(f"Model {self.hparams.model} not implemented.")
+            raise ValueError(f"Model {self.hparams.model} not supported.")
+        
+        if self.hparams.task == "xnli":
+            self.model = self._load_model(AutoModelForSequenceClassification, "SEQ_CLS", target_modules)
+        else:
+            # self.model = self._load_model(AutoModelForCausalLM, "CAUSAL_LM", target_modules)
+            raise ValueError(f"Task {self.hparams.task} not supported.")
 
     def forward(self, input_ids, attention_mask=None, labels=None):
         return self.model(input_ids, attention_mask=attention_mask, labels=labels)
@@ -108,6 +115,51 @@ class MultilingualModel(L.LightningModule):
                 "monitor": "val_loss",
             },
         }
+    def _load_model(self, model_cls, task_type, target_modules):
+        bnb_config = None
+
+        if self.hparams.load_in_4bit:
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                # bnb_4bit_compute_dtype=self.hparams.dtype, ??
+                bnb_4bit_use_double_quant=True,
+            )
+
+
+        model = model_cls.from_pretrained(
+            self.hparams.model,
+            num_labels=self.datamodule.num_classes if task_type == "SEQ_CLS" else None,
+            cache_dir=self.hparams.cache_dir,
+            resume_download=True,
+            load_in_8bit=self.hparams.load_in_8bit,
+            quantization_config=bnb_config,
+            ignore_mismatched_sizes=True,
+        )
+
+        lora_config = None
+        if self.hparams.use_lora:
+            lora_config = LoraConfig(
+                lora_alpha=16,
+                lora_dropout=0.1,
+                r=8,
+                bias="none",
+                task_type=task_type,
+                target_modules=target_modules
+            )
+            
+            if self.hparams.do_train:
+                if self.hparams.load_in_4bit or self.hparams.load_in_8bit:
+                    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True) # lightning에서 안된다 그랬음
+                model = get_peft_model(model, lora_config)
+
+        # # print model summary
+        # print(model)
+        # from lightning.pytorch.utilities.model_summary import ModelSummary
+        # print(ModelSummary(model, max_depth=5))
+        # quit()
+
+        return model
 
 
 class ShardEnsembleModel(L.LightningModule):
@@ -170,48 +222,3 @@ class ShardEnsembleModel(L.LightningModule):
             optimizer = AdamW(self.parameters(), lr=self.hparams.learning_rate)
         return {"optimizer": optimizer}
 
-def load_model(args, model_cls, task_type):
-    bnb_config = None
-
-    if args.load_in_4bit:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            # bnb_4bit_compute_dtype=args.dtype,
-            bnb_4bit_use_double_quant=True,
-        )
-
-
-    model = model_cls.from_pretrained(
-        args.model,
-        num_labels=args.num_classes,
-        cache_dir=args.cache_dir,
-        resume_download=True,
-        load_in_8bit=args.load_in_8bit,
-        quantization_config=bnb_config,
-        ignore_mismatched_sizes=True,
-    )
-
-    peft_config = None
-    if args.peft_lora:
-        peft_config = LoraConfig(
-            lora_alpha=16,
-            lora_dropout=0.1,
-            r=8,
-            bias="none",
-            task_type=task_type,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]
-        )
-        
-        if args.do_train:
-            if args.load_in_4bit or args.load_in_8bit:
-                model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True) # lightning에서 안된다 그랬음
-            model = get_peft_model(model, peft_config)
-
-    # # print model summary
-    # from lightning.pytorch.utilities.model_summary import ModelSummary
-    # print(ModelSummary(model, max_depth=5))
-    # print(type(model.transformer.encoder))
-    # quit()
-
-    return model

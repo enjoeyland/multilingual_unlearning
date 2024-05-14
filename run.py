@@ -17,7 +17,7 @@ from lightning.pytorch.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers.models.mt5.modeling_mt5 import MT5Block
 from torch.distributed.fsdp import MixedPrecision
 
-import config
+from config import add_arguments
 from models import MultilingualModel, ShardEnsembleModel
 from dataset import sizeOfShard
 
@@ -108,7 +108,7 @@ def is_passable(args, shards_idx, slice_size, shard, sl):
         "json",
         data_files=os.path.join(
             args.data_dir,
-            f"_{args.task}/forget-{args.forget_ratio}.jsonl",
+            f"{args.task}/forget-{args.forget_ratio}.jsonl",
         ),
     )["train"])
  
@@ -117,7 +117,7 @@ def is_passable(args, shards_idx, slice_size, shard, sl):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    config.add_arguments(parser)
+    add_arguments(parser)
     args = parser.parse_args()
 
     args.train_batch_size = (args.world_size if args.dp_strategy in ["auto", "ddp"] else 1) * args.per_device_batch_size * args.gradient_accumulation_steps

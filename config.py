@@ -21,13 +21,13 @@ def add_arguments(parser):
     parser.add_argument("--do_train", action="store_true", help="Perform training")
     parser.add_argument("--seed", type=int, default=42)
 
-    parser.add_argument("--peft_lora", action="store_true", help="Use PEFT-LoRA")
+    parser.add_argument("--use_lora", action="store_true", help="Use LoRA")
     parser.add_argument("--load_in_4bit", action="store_true", help="Load model in 4-bit quantization")
     parser.add_argument("--load_in_8bit", action="store_true", help="Load model in 8-bit quantization")
 
     parser.add_argument("--dp_strategy", default="auto", help="Distributed training strategy, default auto",
                         choices=["auto", "ddp", "fsdp", "deepspeed", "deepspeed_stage_3", "deepspeed_stage_3_offload"])
-    parser.add_argument("--dp_config", help="DeepSpeed config file, default None")
+    parser.add_argument("--dp_config", help="Distributed training configuration, default None")
     parser.add_argument("--bf16", action="store_true")
 
     parser.add_argument("--optimizer", default="adamw", choices=["adam", "adamw"], help="Optimizer to use, default adamw")

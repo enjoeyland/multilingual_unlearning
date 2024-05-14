@@ -41,13 +41,13 @@ class XNLIDataModule(L.LightningDataModule):
         for split in ["train", "valid", "test"]:
             self.data_name[split] = f"{split if split != 'valid' else 'val'}"
             self.data[split] = load_dataset(
-                "json", data_files=str((Path(__file__).parent / self.data_dir / f"_{self.task}/{split}.jsonl").resolve()),
+                "json", data_files=str((Path(__file__).parent / self.data_dir / f"{self.task}/{split}.jsonl").resolve()),
             )["train"]
 
         for split in ["forget", "retain"]:
             self.data_name[split] = split
             self.data[split] = load_dataset(
-                "json", data_files=str((Path(__file__).parent / self.data_dir / f"_{self.task}/{split}-{self.forget_ratio}.jsonl").resolve()),
+                "json", data_files=str((Path(__file__).parent / self.data_dir / f"{self.task}/{split}-{self.forget_ratio}.jsonl").resolve()),
             )["train"]
 
         # Prepare datasets
