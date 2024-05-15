@@ -1,10 +1,11 @@
+import os
 import torch
 import lightning as L
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, BitsAndBytesConfig
-from torch.optim import AdamW, Adam
 from deepspeed.ops.adam import FusedAdam
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from pytorch_lightning.core.saving import save_hparams_to_yaml
 
 from datamodules import XNLIDataModule
 
@@ -13,7 +14,9 @@ class MultilingualModel(L.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
+        save_hparams_to_yaml(os.path.join(hparams.output_dir, "hparams.yaml"), hparams)
         
+
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.model, cache_dir=hparams.cache_dir)
         if hparams.task == "xnli":
             self.datamodule = XNLIDataModule(hparams, self.tokenizer)
@@ -26,7 +29,6 @@ class MultilingualModel(L.LightningModule):
     def configure_model(self):
         if self.model is not None:
             return
-        
 
         if "mt5" in self.hparams.model_name:
             target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
@@ -49,7 +51,10 @@ class MultilingualModel(L.LightningModule):
         outputs = self(**batch)
         loss = outputs.loss
         accuracy = (outputs.logits.argmax(dim=-1) == batch["labels"]).float().mean()
-        self.log_dict({"train_loss": loss, "train_accuracy": accuracy}, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
+        self.log_dict({
+            "train_loss": loss,
+            "train_accuracy": accuracy
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
         return loss
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
@@ -81,9 +86,9 @@ class MultilingualModel(L.LightningModule):
             optimizer = FusedAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
                                   adam_w_mode=(self.hparams.optimizer == "adamw")) 
         elif self.hparams.optimizer == "adam":
-            optimizer = Adam(self.model.parameters(), lr=self.hparams.learning_rate)
+            optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
-            optimizer = AdamW(self.model.parameters(), lr=self.hparams.learning_rate)
+            optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.hparams.learning_rate)
         else:
             raise NotImplementedError(f"Optimizer {self.hparams.optimizer} not implemented.")
         
@@ -115,14 +120,14 @@ class MultilingualModel(L.LightningModule):
                 "monitor": "val_loss",
             },
         }
+    
     def _load_model(self, model_cls, task_type, target_modules):
         bnb_config = None
-
         if self.hparams.load_in_4bit:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                # bnb_4bit_compute_dtype=self.hparams.dtype, ??
+                bnb_4bit_compute_dtype="bf16" if self.hparams.bf16 else "fp32",
                 bnb_4bit_use_double_quant=True,
             )
 
@@ -134,7 +139,7 @@ class MultilingualModel(L.LightningModule):
             resume_download=True,
             load_in_8bit=self.hparams.load_in_8bit,
             quantization_config=bnb_config,
-            ignore_mismatched_sizes=True,
+            # ignore_mismatched_sizes=True, # deepspeed 실행중 필요해서 추가
         )
 
         lora_config = None
@@ -217,8 +222,8 @@ class ShardEnsembleModel(L.LightningModule):
 
     def configure_optimizers(self):
         if self.hparams.optimizer == "adam":
-            optimizer = Adam(self.parameters(), lr=self.hparams.learning_rate)
+            optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
-            optimizer = AdamW(self.parameters(), lr=self.hparams.learning_rate)
+            optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
         return {"optimizer": optimizer}
 

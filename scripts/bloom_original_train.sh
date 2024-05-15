@@ -20,14 +20,14 @@ python run.py \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
-    --learning_rate 5e-5 \
+    --learning_rate 3e-5 \
     --lr_scheduler_type linear \
     --warmup_ratio 0.1 \
     --epochs 3 \
     --world_size $world_size \
     --per_device_batch_size 8 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 16 \
     --logging_steps 200 \
-    --eval_steps 500 \
-    --max_tolerance 5 \
+    --eval_steps 0.1 \
+    --max_tolerance 3 \
     --output_dir ".checkpoints/"

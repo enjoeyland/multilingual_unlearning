@@ -20,18 +20,10 @@ class XNLIDataset(Dataset):
         item = self.data[idx]
         lang_idx = self.data[idx]["hypothesis"]["language"].index(self.lang)
         if self.add_prefix:
-            text = (
-                "xnli: premise: "
-                + item["premise"][self.lang]
-                + " hypothesis: "
-                + item["hypothesis"]["translation"][lang_idx]
-            )
+            text = f"xnli: premise: {item['premise'][self.lang]} hypothesis: {item['hypothesis']['translation'][lang_idx]}"
         else:
-            text = (
-                item["premise"][self.lang]
-                + " "
-                + item["hypothesis"]["translation"][lang_idx]
-            )
+            text = f"{item['premise'][self.lang]} {item['hypothesis']['translation'][lang_idx]}"
+
         inputs = self.tokenizer(
             text,
             max_length=self.max_seq_len,

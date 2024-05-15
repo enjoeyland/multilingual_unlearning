@@ -60,10 +60,12 @@ class XNLIDataModule(L.LightningDataModule):
                 "valid": ["valid", "forget"],
                 "test": ["test"],
             }
+            if self.method in ["original"]:
+                dataset_mapping["valid"] = ["valid"]
 
             for split, data_splits in dataset_mapping.items():
                 for s in data_splits:
-                    self.datasets[split].append(XNLIDataset(self.data[s], self.tokenizer, self.max_length))
+                    self.datasets[split].append(XNLIDataset(self.data[s], self.tokenizer, self.max_length, lang="en", add_prefix=True))
                     self.dataset_names[split].append(self.data_name[s])
 
             if self.method in ["sisa", "sisa-retain"]:

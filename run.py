@@ -29,7 +29,7 @@ def main(args, model_path=None):
         name += f"_sd{args.shard}"
 
     wandb_logger = WandbLogger(
-        project="multilinugal-unlearning",
+        project="multilingual-unlearning",
         group="/".join(args.output_dir.split("/")[1:4]),
         name=name,
         config=args,
@@ -73,7 +73,7 @@ def main(args, model_path=None):
 
     early_stopping = EarlyStopping(
         monitor="val_accuracy",
-        patience=args.max_tolerance,
+        patience=args.max_tolerance, # if eval_steps is int, 3 * (int(float eval_steps *  train size / int eval_steps)+1) 1000 20정도하면 되지 않을까?
         mode="max",
     )
 
@@ -89,6 +89,7 @@ def main(args, model_path=None):
         log_every_n_steps=args.logging_steps,
         callbacks=[checkpoint_callback, early_stopping],
         default_root_dir=args.output_dir,
+        reload_dataloaders_every_n_epochs=0, # for unlearning
     )
 
     if args.do_train:

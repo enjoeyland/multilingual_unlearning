@@ -40,9 +40,8 @@ def add_arguments(parser):
     parser.add_argument("--per_device_batch_size", default=16, type=int, help="Batch size, default 16")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=4)
 
-    parser.add_argument("--logging_steps", type=int, default=10)
-    parser.add_argument("--evaluation_strategy", default="steps", choices=["steps", "epoch", "no"], help="Evaluation strategy, default steps")
-    parser.add_argument("--eval_steps", type=int, default=50)
+    parser.add_argument("--logging_steps", type=int, default=500)    
+    parser.add_argument("--eval_steps", type=float, default=1000, help="Evaluate every n steps, default 1000")
     parser.add_argument("--max_tolerance", type=int, default=3)
 
     parser.add_argument("--output_dir", type=str, default="checkpoints/")
