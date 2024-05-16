@@ -1,9 +1,9 @@
 import os
 import torch
+import deepspeed
 import lightning as L
 
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM, get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup, BitsAndBytesConfig
-from deepspeed.ops.adam import FusedAdam
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from pytorch_lightning.core.saving import save_hparams_to_yaml
 
@@ -82,9 +82,12 @@ class MultilingualModel(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        if "deepspeed" in self.hparams.dp_strategy:
-            optimizer = FusedAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
-                                  adam_w_mode=(self.hparams.optimizer == "adamw")) 
+        if "deepspeed" in self.hparams.dp_strategy and "offload" not in self.hparams.dp_strategy:
+            optimizer = deepspeed.ops.adam.FusedAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
+                                adam_w_mode=(self.hparams.optimizer == "adamw")) 
+        elif "deepspeed" in self.hparams.dp_strategy and "offload" in self.hparams.dp_strategy:
+            optimizer = deepspeed.ops.adam.DeepSpeedCPUAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
+                                adamw_mode=(self.hparams.optimizer == "adamw"))
         elif self.hparams.optimizer == "adam":
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
@@ -123,10 +126,10 @@ class MultilingualModel(L.LightningModule):
     
     def _load_model(self, task_type, target_modules=None):
         model_kwargs = {}
-        
-        if self.hparams.dp_strategy == "deepspeed":
-            model_kwargs["ignore_mismatched_sizes"] = True
 
+        if "deepspeed" in self.hparams.dp_strategy:
+            model_kwargs["ignore_mismatched_sizes"] = True
+        
         bnb_config = None
         if self.hparams.load_in_4bit:
             bnb_config = BitsAndBytesConfig(
@@ -169,6 +172,9 @@ class MultilingualModel(L.LightningModule):
             if self.hparams.load_in_4bit or self.hparams.load_in_8bit:
                 model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True) # lightning에서 안된다 그랬음
             model = get_peft_model(model, lora_config)
+
+        if self.hparams.do_train:
+            model.train()
 
         # # print model summary
         # print(model)

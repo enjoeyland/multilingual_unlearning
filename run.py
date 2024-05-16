@@ -54,8 +54,6 @@ def main(args, model_path=None):
             mixed_precision=MixedPrecision(param_dtype=torch.bfloat16, cast_forward_inputs=True) if args.bf16 else None,
             sharding_strategy="FULL_SHARD",
         )
-    if "deepspeed" in args.dp_strategy and args.dp_config:
-        strategy = DeepSpeedStrategy(config=args.dp_config)
     else:
         strategy = args.dp_strategy
 
