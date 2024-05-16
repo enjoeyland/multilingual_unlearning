@@ -22,8 +22,9 @@ def add_arguments(parser):
     parser.add_argument("--seed", type=int, default=42)
 
     parser.add_argument("--use_lora", action="store_true", help="Use LoRA")
-    parser.add_argument("--load_in_4bit", action="store_true", help="Load model in 4-bit quantization")
+    parser.add_argument("--use_qlora", action="store_true", help="Use QLoRA")
     parser.add_argument("--load_in_8bit", action="store_true", help="Load model in 8-bit quantization")
+    parser.add_argument("--load_in_4bit", action="store_true", help="Load model in 4-bit quantization")
 
     parser.add_argument("--dp_strategy", default="auto", help="Distributed training strategy, default auto",
                         choices=["auto", "ddp", "fsdp", "deepspeed", "deepspeed_stage_3", "deepspeed_stage_3_offload"])

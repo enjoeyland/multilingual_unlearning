@@ -39,9 +39,9 @@ class MultilingualModel(L.LightningModule):
             raise ValueError(f"Model {self.hparams.model} not supported.")
         
         if self.hparams.task == "xnli":
-            self.model = self._load_model(AutoModelForSequenceClassification, "SEQ_CLS", target_modules)
+            self.model = self._load_model("SEQ_CLS", target_modules)
         else:
-            # self.model = self._load_model(AutoModelForCausalLM, "CAUSAL_LM", target_modules)
+            # self.model = self._load_model("CAUSAL_LM", target_modules)
             raise ValueError(f"Task {self.hparams.task} not supported.")
 
     def forward(self, input_ids, attention_mask=None, labels=None):
@@ -121,42 +121,54 @@ class MultilingualModel(L.LightningModule):
             },
         }
     
-    def _load_model(self, model_cls, task_type, target_modules):
+    def _load_model(self, task_type, target_modules=None):
+        model_kwargs = {}
+        
+        if self.hparams.dp_strategy == "deepspeed":
+            model_kwargs["ignore_mismatched_sizes"] = True
+
         bnb_config = None
         if self.hparams.load_in_4bit:
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype="bf16" if self.hparams.bf16 else "fp32",
+                bnb_4bit_compute_dtype=torch.bfloat16 if self.hparams.bf16 else "float",
                 bnb_4bit_use_double_quant=True,
             )
+            model_kwargs["quantization_config"] = bnb_config
+        if self.hparams.load_in_8bit:
+            model_kwargs["load_in_8bit"] = True
 
+        if task_type == "SEQ_CLS":
+            model_cls = AutoModelForSequenceClassification
+            model_kwargs["num_labels"] = self.datamodule.num_classes
+        elif task_type == "CAUSAL_LM":
+            model_cls = AutoModelForCausalLM
+        else:
+            raise ValueError(f"Task type {task_type} not supported.")
 
         model = model_cls.from_pretrained(
             self.hparams.model,
-            num_labels=self.datamodule.num_classes if task_type == "SEQ_CLS" else None,
             cache_dir=self.hparams.cache_dir,
             resume_download=True,
-            load_in_8bit=self.hparams.load_in_8bit,
-            quantization_config=bnb_config,
-            # ignore_mismatched_sizes=True, # deepspeed 실행중 필요해서 추가
+            **model_kwargs,
         )
 
         lora_config = None
-        if self.hparams.use_lora:
+        if self.hparams.use_lora or self.hparams.use_qlora:
             lora_config = LoraConfig(
+                r=8,
                 lora_alpha=16,
                 lora_dropout=0.1,
-                r=8,
                 bias="none",
                 task_type=task_type,
-                target_modules=target_modules
+                target_modules="all-linear" if self.hparams.use_qlora else target_modules,
+                inference_mode=not self.hparams.do_train
             )
             
-            if self.hparams.do_train:
-                if self.hparams.load_in_4bit or self.hparams.load_in_8bit:
-                    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True) # lightning에서 안된다 그랬음
-                model = get_peft_model(model, lora_config)
+            if self.hparams.load_in_4bit or self.hparams.load_in_8bit:
+                model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True) # lightning에서 안된다 그랬음
+            model = get_peft_model(model, lora_config)
 
         # # print model summary
         # print(model)
