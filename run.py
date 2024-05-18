@@ -57,6 +57,16 @@ def main(args, model_path=None):
     else:
         strategy = args.dp_strategy
 
+    # Add this line to solve AttributeError: 'PeftModelForSequenceClassification' object has no attribute 'base_model'
+    # which is caused by Initiate deepspeed both in lightning and peft
+    if "deepspeed" in args.dp_strategy and args.use_lora: # TODO: 되는지 확인
+        from contextlib import contextmanager
+
+        @contextmanager
+        def model_sharded_context(self):
+            yield
+        DeepSpeedStrategy.model_sharded_context = model_sharded_context
+
     checkpoint_callback = ModelCheckpoint(
         monitor="val_accuracy",
         mode="max",

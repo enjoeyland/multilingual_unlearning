@@ -17,6 +17,7 @@ python run.py \
     --num_workers 4 \
     --do_train \
     --seed 42 \
+    --use_lora \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
@@ -28,6 +29,6 @@ python run.py \
     --per_device_batch_size 8 \
     --gradient_accumulation_steps 16 \
     --logging_steps 200 \
-    --eval_steps 0.1 \
-    --max_tolerance 3 \
+    --eval_steps 1000 \
+    --max_tolerance 13 \
     --output_dir ".checkpoints/"

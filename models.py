@@ -33,8 +33,7 @@ class MultilingualModel(L.LightningModule):
         if "mt5" in self.hparams.model_name:
             target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
         elif "bloom" in self.hparams.model_name:
-            # target_modules = ["query_key_value", "dense", "dense_h_to_4h", "dense_4h_to_h"]
-            target_modules = ["query_key_value"]
+            target_modules = ["query_key_value", "dense", "dense_h_to_4h", "dense_4h_to_h"]
         else:
             raise ValueError(f"Model {self.hparams.model} not supported.")
         

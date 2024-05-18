@@ -4,10 +4,11 @@ set -eou pipefail
 IFS=$'\n\t'
 
 world_size=2
+batch_size=8
 
 python run.py \
-    --model_name bloomz-560m \
-    --model bigscience/bloomz-560m \
+    --model_name bloom-560M \
+    --model bigscience/bloom-560M \
     --method original \
     --cache_dir ../.cache \
     --task xnli \
@@ -16,8 +17,9 @@ python run.py \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --num_workers 4 \
     --do_train \
+    --use_lora \
     --seed 42 \
-    --dp_strategy deepspeed_stage_3_offload \
+    --dp_strategy deepspeed_stage_3 \
     --bf16 \
     --optimizer adamw \
     --learning_rate 3e-5 \
@@ -25,9 +27,9 @@ python run.py \
     --warmup_ratio 0.1 \
     --epochs 3 \
     --world_size $world_size \
-    --per_device_batch_size 1 \
-    --gradient_accumulation_steps 128 \
-    --logging_steps 200 \
-    --eval_steps 1000 \
+    --per_device_batch_size $batch_size \
+    --gradient_accumulation_steps $((128 / batch_size)) \
+    --logging_steps $((1600 / batch_size)) \
+    --eval_steps $((8000 / batch_size)) \
     --max_tolerance 15 \
     --output_dir ".checkpoints/"
