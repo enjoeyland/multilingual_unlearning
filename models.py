@@ -7,7 +7,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Auto
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from pytorch_lightning.core.saving import save_hparams_to_yaml
 
-from datamodules import XNLIDataModule
+from datamodules import XNLIDataModule, FLORESDataModule
 
 
 class MultilingualModel(L.LightningModule):
@@ -20,6 +20,8 @@ class MultilingualModel(L.LightningModule):
         self.tokenizer = AutoTokenizer.from_pretrained(hparams.model, cache_dir=hparams.cache_dir)
         if hparams.task == "xnli":
             self.datamodule = XNLIDataModule(hparams, self.tokenizer)
+        elif hparams.task == "flores":
+            self.datamodule = FLORESDataModule(hparams, self.tokenizer)
         else:
             raise NotImplementedError(f"Task {hparams.task} not implemented.")
         self.model = None

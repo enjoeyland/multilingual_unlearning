@@ -1,66 +1,8 @@
 import os
 import json
-import torch
 import numpy as np
 
 from torch.utils.data import Dataset, ConcatDataset
-
-class XNLIDataset(Dataset):
-    def __init__(self, data, tokenizer, max_length, lang="en", add_prefix=True):
-        self.data = data
-        self.tokenizer = tokenizer
-        self.max_seq_len = max_length
-        self.lang = lang
-        self.add_prefix = add_prefix
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        item = self.data[idx]
-        lang_idx = self.data[idx]["hypothesis"]["language"].index(self.lang)
-        if self.add_prefix:
-            text = f"xnli: premise: {item['premise'][self.lang]} hypothesis: {item['hypothesis']['translation'][lang_idx]}"
-        else:
-            text = f"{item['premise'][self.lang]} {item['hypothesis']['translation'][lang_idx]}"
-
-        inputs = self.tokenizer(
-            text,
-            max_length=self.max_seq_len,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt",
-        )
-        return {
-            "input_ids": inputs["input_ids"].squeeze(),
-            "attention_mask": inputs["attention_mask"].squeeze(),
-            "labels": torch.tensor(item["label"]),
-        }
-
-class XNLIEnDataset(Dataset):
-    def __init__(self, tokenizer, data, max_length):
-        self.tokenizer = tokenizer
-        self.data = data
-        self.max_length = max_length
-        self.num_classes = len(set(self.data['label']))
-
-    def __getitem__(self, idx):
-        item = self.data[idx]
-        self.encodings = self.tokenizer(
-            item['premise'], item['hypothesis'],
-            max_length=self.max_length,
-            truncation=True,
-            padding='max_length',
-            return_tensors='pt'
-        )
-        return {
-            "input_ids": self.encodings['input_ids'].squeeze(),
-            "attention_mask": self.encodings['attention_mask'].squeeze(),
-            "labels": torch.tensor(item['label'])
-        }
-
-    def __len__(self):
-        return len(self.data)
 
 def shard_data(output_dir, data_length, shards):
     splitfile = os.path.join(f'{output_dir}', f'shard{shards}-splitfile.jsonl')

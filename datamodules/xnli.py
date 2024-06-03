@@ -1,21 +1,22 @@
-from collections import defaultdict
+import torch
 import lightning as L
 
 from pathlib import Path
 from datasets import load_dataset
-from torch.utils.data import DataLoader
+from collections import defaultdict
+from torch.utils.data import DataLoader, Dataset
 
-from dataset import XNLIDataset, MixedDataset, ShardDataset, shard_data, sizeOfShard
-
-XNLI_LANGUAGES = [
-    "ar",
-    "bg",
-    "de",
-    "el",
-    "en",
-]  # , "es", "fr", "hi", "ru", "sw", "th", "tr", "ur", "vi", "zh"]
+from .sisa_dataset import ShardDataset, MixedDataset, shard_data, sizeOfShard
 
 class XNLIDataModule(L.LightningDataModule):
+    SUPPORTED_LANGUAGES = [
+        "ar",
+        "bg",
+        "de",
+        "el",
+        "en",
+    ]  # , "es", "fr", "hi", "ru", "sw", "th", "tr", "ur", "vi", "zh"]
+
     def __init__(self, args, tokenizer):
         super().__init__()
         self.num_classes = 3
@@ -93,7 +94,7 @@ class XNLIDataModule(L.LightningDataModule):
             }
 
             for split in dataset_mapping["valid"]:
-                for lang in XNLI_LANGUAGES:
+                for lang in self.SUPPORTED_LANGUAGES:
                     dataset = XNLIDataset(
                         self.data[split], self.tokenizer, self.max_length, lang=lang, add_prefix=True
                     )
@@ -137,3 +138,60 @@ class XNLIDataModule(L.LightningDataModule):
             )
             dataloaders.append(dataloader)
         return dataloaders
+    
+class XNLIDataset(Dataset):
+    def __init__(self, data, tokenizer, max_length, lang="en", add_prefix=True):
+        self.data = data
+        self.tokenizer = tokenizer
+        self.max_seq_len = max_length
+        self.lang = lang
+        self.add_prefix = add_prefix
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        lang_idx = self.data[idx]["hypothesis"]["language"].index(self.lang)
+        if self.add_prefix:
+            text = f"xnli: premise: {item['premise'][self.lang]} hypothesis: {item['hypothesis']['translation'][lang_idx]}"
+        else:
+            text = f"{item['premise'][self.lang]} {item['hypothesis']['translation'][lang_idx]}"
+
+        inputs = self.tokenizer(
+            text,
+            max_length=self.max_seq_len,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
+        )
+        return {
+            "input_ids": inputs["input_ids"].squeeze(),
+            "attention_mask": inputs["attention_mask"].squeeze(),
+            "labels": torch.tensor(item["label"]),
+        }
+
+class XNLIEnDataset(Dataset):
+    def __init__(self, tokenizer, data, max_length):
+        self.tokenizer = tokenizer
+        self.data = data
+        self.max_length = max_length
+        self.num_classes = len(set(self.data['label']))
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        self.encodings = self.tokenizer(
+            item['premise'], item['hypothesis'],
+            max_length=self.max_length,
+            truncation=True,
+            padding='max_length',
+            return_tensors='pt'
+        )
+        return {
+            "input_ids": self.encodings['input_ids'].squeeze(),
+            "attention_mask": self.encodings['attention_mask'].squeeze(),
+            "labels": torch.tensor(item['label'])
+        }
+
+    def __len__(self):
+        return len(self.data)

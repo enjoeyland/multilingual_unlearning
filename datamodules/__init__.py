@@ -1,0 +1,5 @@
+from .flores import FLORESDataModule
+from .xnli import XNLIDataModule
+
+FLORES_LANGUAGES = FLORESDataModule.SUPPORTED_LANGUAGES
+XNLI_LANGUAGES = XNLIDataModule.SUPPORTED_LANGUAGES

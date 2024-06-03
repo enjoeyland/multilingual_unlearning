@@ -2,15 +2,19 @@ def add_arguments(parser):
     # Model arguments
     parser.add_argument("--model_name", default="mt5-base", help="Model name, default mt5-base")
     parser.add_argument("--model", default="google/mt5-base", help="Model to use, default google/mt5-base")
-    parser.add_argument("--method", default="original", choices=["original", "sisa", "sisa-retain"], help="Method to use, default original")
+    parser.add_argument("--method", default="original", choices=["original", "sisa", "sisa-retain", "negtaskvector"], help="Method to use, default original")
     parser.add_argument("--cache_dir", help="Location of the cache, default None")
 
     # Data arguments
-    parser.add_argument("--task", default="xnli", help="Name of the task")
-    parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--task", default="flores", help="Name of the task")
+    parser.add_argument("--forget_lang", type=str, nargs="+", default=["en"])
+    parser.add_argument("--retain_lang", type=str, nargs="+", default=["en"])
     parser.add_argument("--forget_ratio", type=float, default=0.01, help="Forget ratio, default 0.01")
-    parser.add_argument("--data_dir", default="data/", help="Location of the data, default data/")
+    parser.add_argument("--forget_num", type=int, default=32, help="Forget number, default 1000")
+    parser.add_argument("--retain_multiplier", type=int, default=1, help="Retain multiplier, default 1")
+    parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--num_workers", default=4, type=int, help="Number of workers to use, default 4")
+    parser.add_argument("--data_dir", default="data/", help="Location of the data, default data/")
 
     # Sharding arguments
     parser.add_argument("--shards", default=5, type=int, help="Number of shards to use, default 5")
