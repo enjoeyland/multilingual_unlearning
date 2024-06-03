@@ -3,8 +3,9 @@ import random
 import lightning as L
 
 from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
+from collections import defaultdict
+from torch.utils.data import Dataset, DataLoader
 
 
 class FLORESDataModule(L.LightningDataModule):
@@ -47,7 +48,7 @@ class FLORESDataModule(L.LightningDataModule):
             self.data_name[split] = f"{split if split != 'valid' else 'val'}"
             self.data[split] = load_dataset(
                 "json", 
-                data_files=str((Path(__file__).parent / self.data_dir / f"{self.task}/{split}.jsonl").resolve()),
+                data_files=str((Path(__file__).parent.parent / self.data_dir / f"{self.task}/{split}.jsonl").resolve()),
                 cache_dir=self.cache_dir,
             )["train"]
 
@@ -55,7 +56,7 @@ class FLORESDataModule(L.LightningDataModule):
             self.data_name[split] = split
             self.data[split] = load_dataset(
                 "json", 
-                data_files=str((Path(__file__).parent / self.data_dir / f"{self.task}/{split}-{self.forget_num}.jsonl").resolve()),
+                data_files=str((Path(__file__).parent.parent  / self.data_dir / f"{self.task}/{split}-{self.forget_num}.jsonl").resolve()),
                 cache_dir=self.cache_dir,
             )["train"]
             self.data_lang[split] = self.lang[split]
@@ -64,11 +65,16 @@ class FLORESDataModule(L.LightningDataModule):
             self.data_name[split] = split
             self.data[split] = load_dataset(
                 "json", 
-                data_files=str((Path(__file__).parent / self.data_dir / f"{self.task}/{split}-{self.forget_num}-x{self.args.retain_multiplier}.jsonl").resolve()),
+                data_files=str((Path(__file__).parent.parent / self.data_dir / f"{self.task}/{split}-{self.forget_num}-x{self.args.retain_multiplier}.jsonl").resolve()),
                 cache_dir=self.cache_dir,
             )["train"]
             self.data_lang[split] = self.lang[split]
 
+
+        # Prepare datasets
+        self.datasets = defaultdict(list)
+        self.dataset_names = defaultdict(list)
+        
         if stage == "fit":
             dataset_mapping = {
                 "train": ["forget", "retain"],
@@ -77,16 +83,18 @@ class FLORESDataModule(L.LightningDataModule):
 
             if self.method in ["negtaskvector"]:
                 dataset_mapping["train"] = ["forget"]
+            elif self.method in ["sisa", "sisa-retain"]:
+                raise NotImplementedError("SISA method not implemented for FLORES dataset.")
 
             # Randomly sample languages
             for split in dataset_mapping["train"]:
                 self.datasets["train"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=self.data_lang[split]))
-                self.dataset_names["train"].append(self.data_name[split])
+                self.dataset_names["train"].append(f"train/{self.data_name[split]}")
 
             for lang in self.SUPPORTED_LANGUAGES:
                 for split in dataset_mapping["valid"]:
                     self.datasets["valid"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
-                    self.dataset_names["valid"].append(f"{self.data_name[split]}/{lang}")
+                    self.dataset_names["valid"].append(f"val/{self.data_name[split]}_{lang}")
 
         elif stage == "validate":
             dataset_mapping = {
@@ -96,7 +104,7 @@ class FLORESDataModule(L.LightningDataModule):
             for lang in self.SUPPORTED_LANGUAGES:
                 for split in dataset_mapping["valid"]:
                     self.datasets["valid"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
-                    self.dataset_names["valid"].append(f"{self.data_name[split]}/{lang}")
+                    self.dataset_names["valid"].append(f"val/{self.data_name[split]}_{lang}")
 
         elif stage == "test":
             dataset_mapping = {
@@ -104,9 +112,9 @@ class FLORESDataModule(L.LightningDataModule):
             }
 
             for lang in self.SUPPORTED_LANGUAGES:
-                for split in dataset_mapping["valid"]:
-                    self.datasets["valid"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
-                    self.dataset_names["valid"].append(f"{self.data_name[split]}/{lang}")
+                for split in dataset_mapping["test"]:
+                    self.datasets["test"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
+                    self.dataset_names["test"].append(f"test/{self.data_name[split]}_{lang}")
         
         else:
             raise ValueError(f"Invalid stage: {stage}")
@@ -187,8 +195,8 @@ class FLORESDataset(Dataset):
 if __name__ == "__main__":
     from transformers import AutoTokenizer
     
-    data_dir = "../../../research/multilingual-unlearning/data"    
-    data = load_dataset("json", data_files=str((Path(__file__).parent / data_dir / "flores/valid.jsonl").resolve()), cache_dir="../../.cache")["train"]
+    data_dir = "../../research/multilingual-unlearning/data"    
+    data = load_dataset("json", data_files=str((Path(__file__).parent.parent  / data_dir / "flores/valid.jsonl").resolve()), cache_dir="../../.cache")["train"]
     tokenizer = AutoTokenizer.from_pretrained(
                     "bigscience/bloom-560M",
                     cache_dir="../../.cache",

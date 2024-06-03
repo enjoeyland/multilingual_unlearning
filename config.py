@@ -49,7 +49,6 @@ def add_arguments(parser):
     parser.add_argument("--max_tolerance", type=int, default=3)
 
     parser.add_argument("--output_dir", type=str, default="checkpoints/")
-    parser.add_argument("--checkpoint_name", type=str, default="best")
 
     parser.add_argument("--do_eval", action="store_true", help="Perform evaluation on the validation set")
     parser.add_argument("--do_test", action="store_true", help="Perform evaluation on the test set")

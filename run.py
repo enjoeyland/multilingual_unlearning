@@ -10,8 +10,7 @@ from glob import glob
 from datasets import load_dataset
 
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
+
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from lightning.pytorch.strategies import FSDPStrategy, DeepSpeedStrategy
 from transformers.models.mt5.modeling_mt5 import MT5Block
@@ -19,7 +18,7 @@ from torch.distributed.fsdp import MixedPrecision
 
 from config import add_arguments
 from models import MultilingualModel, ShardEnsembleModel
-from dataset import sizeOfShard
+from callbacks import Callbacks, CustomMetricTracker, CustomRichProgressBar
 
 def main(args, model_path=None):
     L.seed_everything(args.seed, workers=True)
@@ -59,7 +58,7 @@ def main(args, model_path=None):
 
     # Add this line to solve AttributeError: 'PeftModelForSequenceClassification' object has no attribute 'base_model'
     # which is caused by Initiate deepspeed both in lightning and peft
-    if "deepspeed" in args.dp_strategy and args.use_lora: # TODO: 되는지 확인
+    if "deepspeed" in args.dp_strategy and args.use_lora:
         from contextlib import contextmanager
 
         @contextmanager
@@ -67,23 +66,14 @@ def main(args, model_path=None):
             yield
         DeepSpeedStrategy.model_sharded_context = model_sharded_context
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor="val_accuracy",
-        mode="max",
-        save_top_k=1,
-        save_weights_only=True,
-        save_last=False,
-        save_on_train_epoch_end=True,
-        dirpath=args.output_dir,
-        filename=args.checkpoint_name,
-        verbose=True,
-    )
 
-    early_stopping = EarlyStopping(
-        monitor="val_accuracy",
-        patience=args.max_tolerance, # if eval_steps is int, 3 * (int(float eval_steps *  train size / int eval_steps)+1) 1000 20정도하면 되지 않을까?
-        mode="max",
-    )
+    cb = Callbacks(args)
+    callbacks = [
+        CustomMetricTracker(args.output_dir),
+        # CustomRichProgressBar(),
+        cb.get_checkpoint_callback(),
+        cb.get_early_stopping(),
+    ]
 
     trainer = L.Trainer(
         strategy=strategy,
@@ -95,7 +85,7 @@ def main(args, model_path=None):
         val_check_interval=args.eval_steps,
         logger=wandb_logger,
         log_every_n_steps=args.logging_steps,
-        callbacks=[checkpoint_callback, early_stopping],
+        callbacks=callbacks,
         default_root_dir=args.output_dir,
         reload_dataloaders_every_n_epochs=0, # for unlearning
     )
@@ -140,6 +130,8 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
 
     if args.do_train and args.method in ["sisa", "sisa-retain"]:
+        from datamodules.sisa_dataset import sizeOfShard
+
         epochs = args.epochs
         do_eval = args.do_eval
         args.do_eval = False
@@ -187,8 +179,6 @@ if __name__ == "__main__":
                     else:
                         check_passable = False
                         print(f"Shard {shard} slice {sl} has forget data")
-
-                args.checkpoint_name = f"shard{shard}-slice{sl}" 
 
                 avg_epochs_per_slice = (2 * epochs / (args.slices + 1)) # See paper for explanation.
                 slice_epochs = int((sl + 1) * avg_epochs_per_slice) - int(sl * avg_epochs_per_slice)
