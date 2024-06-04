@@ -11,6 +11,9 @@ langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
 world_size=1
 batch_size=8
 
+# scaling_coef=("0.1" "0.05")
+
+# for sc in "${scaling_coef[@]}"; do
 python run.py \
     --model_name xglm-564M \
     --model facebook/xglm-564M \
@@ -23,7 +26,7 @@ python run.py \
     --max_length 256 \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --do_train \
+    --scaling_coef 0.1 \
     --seed 42 \
     --dp_strategy auto \
     --bf16 \
@@ -34,8 +37,10 @@ python run.py \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
-    --gradient_accumulation_steps $((32 / batch_size)) \
+    --gradient_accumulation_steps $((32 / world_size / batch_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
     --max_tolerance 5 \
-    --output_dir ".checkpoints/"
+    --output_dir ".checkpoints/" \
+    --do_eval
+# done

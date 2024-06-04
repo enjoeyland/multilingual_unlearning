@@ -94,8 +94,24 @@ def main(args, model_path=None):
         trainer.fit(model, datamodule=model.datamodule)
 
     if args.do_eval:
+        if args.method in "negtaskvector":
+            model = load_negtaskvector_model(args)
         trainer.validate(model, datamodule=model.datamodule)
 
+def load_negtaskvector_model(args):
+    from task_vectors import TaskVector
+    pretraind_model = MultilingualModel(args)
+    pretraind_model.configure_model()
+
+    saved_ckpt = glob(f"{args.output_dir}/*.ckpt")
+    saved_ckpt = [item for item in saved_ckpt if "negtaskvector" not in item.split("/")[-1]]
+    ckpt = sorted(saved_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
+    ckpt_metrics = ckpt.split("/")[-1].split("-")[0]
+
+    model = (-TaskVector(pretraind_model, ckpt)).apply_to(pretraind_model, scaling_coef=args.scaling_coef)
+
+    torch.save(model, os.path.join(args.output_dir, f"negtaskvector_s{args.scaling_coef}_{ckpt_metrics}.ckpt"))
+    return model
 
 def is_passable(args, shards_idx, slice_size, shard, sl):
     shard_idx = np.array(shards_idx[shard])

@@ -20,6 +20,8 @@ def add_arguments(parser):
     parser.add_argument("--shards", default=5, type=int, help="Number of shards to use, default 5")
     parser.add_argument("--slices", default=1, type=int, help="Number of slices to use, default 1")
 
+    # Negtaskvector arguments
+    parser.add_argument("--scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
 
     # Training arguments
     parser.add_argument("--do_train", action="store_true", help="Perform training")
