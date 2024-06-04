@@ -21,7 +21,9 @@ def add_arguments(parser):
     parser.add_argument("--slices", default=1, type=int, help="Number of slices to use, default 1")
 
     # Negtaskvector arguments
-    parser.add_argument("--scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
+    parser.add_argument("--negtv_fit", default="both", choices=["both", "forget", "retain"], help="Negtaskvector fit, default both")
+    parser.add_argument("--forget_scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
+    parser.add_argument("--retain_scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
 
     # Training arguments
     parser.add_argument("--do_train", action="store_true", help="Perform training")

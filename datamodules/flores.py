@@ -81,9 +81,13 @@ class FLORESDataModule(L.LightningDataModule):
                 "valid": ["valid", "forget"],
             }
 
-            if self.method in ["negtaskvector"]:
-                dataset_mapping["train"] = ["forget"]
-            elif self.method in ["sisa", "sisa-retain"]:
+            if self.method == "negtaskvector":
+                if self.args.negtv_fit == "forget":
+                    dataset_mapping["train"] = ["forget"]
+                elif self.args.negtv_fit == "retain":
+                    dataset_mapping["train"] = ["retain"]
+                    dataset_mapping["valid"] = ["valid", "retain"]
+            elif "sisa" in self.method:
                 raise NotImplementedError("SISA method not implemented for FLORES dataset.")
 
             # Randomly sample languages

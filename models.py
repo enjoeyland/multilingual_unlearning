@@ -60,24 +60,24 @@ class MultilingualModel(L.LightningModule):
         outputs = self(**batch)
         loss = outputs.loss
         name = self.datamodule.dataset_names["train"][self.current_epoch % len(self.datamodule.dataset_names["train"])]
-        self._log_metrics(batch, outputs, loss, name)
+        self._log_metrics("train", batch, outputs, loss, name)
         return loss
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         loss = outputs.loss
         name = self.datamodule.dataset_names["valid"][dataloader_idx]
-        self._log_metrics(batch, outputs, loss, name)
+        self._log_metrics("valid", batch, outputs, loss, name)
         return loss
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         loss = outputs.loss
         name = self.datamodule.dataset_names["test"][dataloader_idx]
-        self._log_metrics(batch, outputs, loss, name)
+        self._log_metrics("test", batch, outputs, loss, name)
         return loss
 
-    def _log_metrics(self, batch, outputs, loss, name):
+    def _log_metrics(self, split, batch, outputs, loss, name):
         metrics = { f"{name}_loss": loss }
         if self.hparams.task in ["xnli"]:
             preds = outputs.logits.argmax(dim=-1)
@@ -86,7 +86,12 @@ class MultilingualModel(L.LightningModule):
         elif self.hparams.task in ["flores"]:
             ppl = torch.exp(loss)
             metrics[f"{name}_ppl"] = ppl
-            if "forget" in name:
+            
+            target = "forget"
+            if self.hparams.negtv_fit == "retain":
+                target = "retain"
+
+            if split == "test" or target in name:
                 ma = self._validation_ma(batch)
                 metrics[f"{name}_ma"] = ma
 

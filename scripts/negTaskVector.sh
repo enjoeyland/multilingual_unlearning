@@ -12,21 +12,27 @@ world_size=1
 batch_size=8
 
 # scaling_coef=("0.1" "0.05")
+# retain_multiplier=("1" "2" "3" "4")
 
 # for sc in "${scaling_coef[@]}"; do
+# for rm in "${retain_multiplier[@]}"; do
 python run.py \
     --model_name xglm-564M \
     --model facebook/xglm-564M \
     --method $method \
     --cache_dir ../.cache \
-    --task ${task} \
+    --task $task \
     --forget_lang ${langs[@]} \
     --retain_lang ${langs[@]} \
     --forget_num 32 \
+    --retain_multiplier 1 \
     --max_length 256 \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --scaling_coef 0.1 \
+    --negtv_fit retain \
+    --forget_scaling_coef 1 \
+    --retain_scaling_coef 0.1 \
+    --do_train \
     --seed 42 \
     --dp_strategy auto \
     --bf16 \

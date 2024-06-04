@@ -9,7 +9,7 @@ import lightning as L
 from glob import glob
 from datasets import load_dataset
 
-from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.loggers import WandbLogger, CSVLogger
 
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from lightning.pytorch.strategies import FSDPStrategy, DeepSpeedStrategy
@@ -24,7 +24,7 @@ def main(args, model_path=None):
     L.seed_everything(args.seed, workers=True)
 
     name = "/".join(args.output_dir.split("/")[4:])
-    if args.do_train and args.method in ["sisa", "sisa-retain"]:
+    if args.do_train and "sisa" in args.method:
         name += f"_sd{args.shard}"
 
     wandb_logger = WandbLogger(
@@ -69,7 +69,7 @@ def main(args, model_path=None):
 
     cb = Callbacks(args)
     callbacks = [
-        CustomMetricTracker(args.output_dir),
+        CustomMetricTracker(args),
         # CustomRichProgressBar(),
         cb.get_checkpoint_callback(),
         cb.get_early_stopping(),
@@ -84,33 +84,48 @@ def main(args, model_path=None):
         max_epochs=args.epochs,
         val_check_interval=args.eval_steps,
         logger=wandb_logger,
+        # logger=csv_logger,
         log_every_n_steps=args.logging_steps,
         callbacks=callbacks,
         default_root_dir=args.output_dir,
         reload_dataloaders_every_n_epochs=0, # for unlearning
+        num_sanity_val_steps=0,
     )
 
     if args.do_train:
         trainer.fit(model, datamodule=model.datamodule)
 
     if args.do_eval:
-        if args.method in "negtaskvector":
-            model = load_negtaskvector_model(args)
+        if args.method == "negtaskvector":
+            model = create_negtaskvector_model(args)
         trainer.validate(model, datamodule=model.datamodule)
 
-def load_negtaskvector_model(args):
+def create_negtaskvector_model(args):
     from task_vectors import TaskVector
     pretraind_model = MultilingualModel(args)
     pretraind_model.configure_model()
 
     saved_ckpt = glob(f"{args.output_dir}/*.ckpt")
-    saved_ckpt = [item for item in saved_ckpt if "negtaskvector" not in item.split("/")[-1]]
-    ckpt = sorted(saved_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
-    ckpt_metrics = ckpt.split("/")[-1].split("-")[0]
+    saved_ckpt = [item for item in saved_ckpt if "negtv" not in item.split("/")[-1]]
+    
+    forget_ckpt = [item for item in saved_ckpt if "forget" in item.split("/")[-1]]
+    forget_ckpt = sorted(forget_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
+    forget_ckpt_metrics = forget_ckpt.split("/")[-1].split("-")[0]
+    forget_tv = TaskVector(pretraind_model, forget_ckpt)
 
-    model = (-TaskVector(pretraind_model, ckpt)).apply_to(pretraind_model, scaling_coef=args.scaling_coef)
+    model = (-forget_tv).apply_to(pretraind_model, scaling_coef=args.forget_scaling_coef)
+    model_name = f"negtv_fs{args.forget_scaling_coef}_{forget_ckpt_metrics}"
 
-    torch.save(model, os.path.join(args.output_dir, f"negtaskvector_s{args.scaling_coef}_{ckpt_metrics}.ckpt"))
+    retain_ckpt = [item for item in saved_ckpt if "retain" in item.split("/")[-1]]
+    if retain_ckpt:
+        retain_ckpt = sorted(retain_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
+        retain_ckpt_metrics = retain_ckpt.split("/")[-1].split("-")[0]
+        retain_tv = TaskVector(pretraind_model, retain_ckpt)
+
+        model = retain_tv.apply_to(model, scaling_coef=args.retain_scaling_coef)
+        model_name += f"-rs{args.retain_scaling_coef}_{retain_ckpt_metrics}"
+
+    torch.save(model, os.path.join(args.output_dir, f"{model_name}.ckpt"))
     return model
 
 def is_passable(args, shards_idx, slice_size, shard, sl):
@@ -145,7 +160,17 @@ if __name__ == "__main__":
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    if args.do_train and args.method in ["sisa", "sisa-retain"]:
+    if args.do_train and args.method == "negtaskvector" and args.negtv_fit == "both":
+        do_eval = args.do_eval
+        args.do_eval = False
+        args.negtv_fit = "forget"
+        main(args)
+
+        args.negtv_fit = "retain"
+        args.do_eval = do_eval
+        main(args)
+
+    elif args.do_train and "sisa" in args.method:
         from datamodules.sisa_dataset import sizeOfShard
 
         epochs = args.epochs
