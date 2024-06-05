@@ -9,13 +9,14 @@ task="flores"
 langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
 
 world_size=1
-batch_size=8
+batch_size=32
 
-# scaling_coef=("0.2" "0.3" "0.4" "0.5" "0.6" "0.7" "0.8" "0.9" "1.0")
-retain_multiplier=("4" "5")
+retain_multiplier=("1" "2" "3")
+scaling_coef=("0.1" "0.08" "0.06" "0.04" "0.02" "0.01")
 
-# for sc in "${scaling_coef[@]}"; do
 for rm in "${retain_multiplier[@]}"; do
+for sc in "${scaling_coef[@]}"; do
+echo "Retain Multiplier: $rm, Scaling Coefficient: $sc"
 python run.py \
     --model_name xglm-564M \
     --model facebook/xglm-564M \
@@ -29,11 +30,10 @@ python run.py \
     --max_length 256 \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --negtv_fit retain \
-    --forget_scaling_coef 1 \
-    --retain_scaling_coef 0.6 \
-    --do_train \
+    --forget_scaling_coef $sc \
+    --retain_scaling_coef 0 \
     --seed 42 \
+    --wandb_mode disabled \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
@@ -49,4 +49,5 @@ python run.py \
     --max_tolerance 5 \
     --output_dir ".checkpoints/" \
     --do_eval
+done
 done

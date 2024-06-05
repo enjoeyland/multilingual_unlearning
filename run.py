@@ -32,6 +32,7 @@ def main(args, model_path=None):
         group="/".join(args.output_dir.split("/")[1:4]),
         name=name,
         config=args,
+        mode=args.wandb_mode,
     )
 
     if model_path:
@@ -116,16 +117,19 @@ def create_negtaskvector_model(args):
     model = (-forget_tv).apply_to(pretraind_model, scaling_coef=args.forget_scaling_coef)
     model_name = f"negtv_fs{args.forget_scaling_coef}_{forget_ckpt_metrics}"
 
-    retain_ckpt = [item for item in saved_ckpt if "retain" in item.split("/")[-1]]
-    if retain_ckpt:
+    if args.retain_scaling_coef != 0:
+        retain_ckpt = [item for item in saved_ckpt if f"retain{args.retain_multiplier}" in item.split("/")[-1]]
+        assert retain_ckpt, f"Retain ckpt not found in {args.output_dir}"
         retain_ckpt = sorted(retain_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
         retain_ckpt_metrics = retain_ckpt.split("/")[-1].split("-")[0]
         retain_tv = TaskVector(pretraind_model, retain_ckpt)
 
         model = retain_tv.apply_to(model, scaling_coef=args.retain_scaling_coef)
         model_name += f"-rs{args.retain_scaling_coef}_{retain_ckpt_metrics}"
-
-    torch.save(model, os.path.join(args.output_dir, f"{model_name}.ckpt"))
+    
+    model_path = os.path.join(args.output_dir, f"{model_name}.ckpt")
+    # if not os.path.exists(model_path):
+    #     torch.save(model, model_path)
     return model
 
 def is_passable(args, shards_idx, slice_size, shard, sl):
@@ -160,6 +164,9 @@ if __name__ == "__main__":
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
+    if not args.do_train and args.method == "negtaskvector":
+        args.negtv_fit = "forget"
+
     if args.do_train and args.method == "negtaskvector" and args.negtv_fit == "both":
         do_eval = args.do_eval
         args.do_eval = False
@@ -167,8 +174,24 @@ if __name__ == "__main__":
         main(args)
 
         args.negtv_fit = "retain"
-        args.do_eval = do_eval
         main(args)
+
+        if do_eval:
+            args.do_eval = True
+            args.do_train = False
+            args.negtv_fit = "forget"
+            main(args)
+    
+    elif args.do_train and args.method == "negtaskvector" and args.negtv_fit == "retain":
+        do_eval = args.do_eval
+        args.do_eval = False
+        main(args)
+
+        if do_eval:
+            args.do_eval = True
+            args.do_train = False
+            args.negtv_fit = "forget"
+            main(args)
 
     elif args.do_train and "sisa" in args.method:
         from datamodules.sisa_dataset import sizeOfShard

@@ -23,11 +23,12 @@ def add_arguments(parser):
     # Negtaskvector arguments
     parser.add_argument("--negtv_fit", default="both", choices=["both", "forget", "retain"], help="Negtaskvector fit, default both")
     parser.add_argument("--forget_scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
-    parser.add_argument("--retain_scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
+    parser.add_argument("--retain_scaling_coef", default=0, type=float, help="Scaling coefficient, default 0")
 
     # Training arguments
     parser.add_argument("--do_train", action="store_true", help="Perform training")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--wandb_mode", default="online", choices=["disabled", "online", "offline"], help="Wandb mode, default disabled")
 
     parser.add_argument("--use_lora", action="store_true", help="Use LoRA")
     parser.add_argument("--use_qlora", action="store_true", help="Use QLoRA")

@@ -74,11 +74,13 @@ class CustomMetricTracker(Callback):
         f.write(f"method: {self.args.method}\n")
         f.write(f"negtv_fit: {self.args.negtv_fit}\n")
         f.write(f"forget_num: {self.args.forget_num}\n")
-        f.write(f"retention_multiplier: {self.args.retain_multiplier}\n")
+        f.write(f"retain_multiplier: {self.args.retain_multiplier}\n")
 
     def _validate_write_params(self, f):
         f.write(f"\n\n{'='*50}\n")
         f.write(f"eval\n")
+        f.write(f"forget_num: {self.args.forget_num}\n")
+        f.write(f"retain_multiplier: {self.args.retain_multiplier}\n")
         f.write(f"forget_scaling_coef: {self.args.forget_scaling_coef}\n")
         f.write(f"retain_scaling_coef: {self.args.retain_scaling_coef}\n")
 
@@ -104,7 +106,7 @@ class CustomMetricTracker(Callback):
             target_ppl = {k: v for k, v in trainer.logged_metrics.items() if "ppl" in k and self.target in k and "x" not in k}
             target_xppl = torch.stack([target_ppl[k] for k in target_ppl.keys()]).mean().item()
 
-            self.log_dict({f"val/{self.target}_xma": target_xma, "val/val_xppl": val_xppl, f"val/{self.target}_xppl": target_xppl}, sync_dist=True)
+            self.log_dict({f"val/{self.target}_xma": target_xma, "val/val_xppl": val_xppl, f"val/{self.target}_xppl": target_xppl})
 
     def on_test_epoch_end(self, trainer, pl_module):
         if self.args.task == "flores":
