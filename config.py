@@ -58,6 +58,9 @@ def add_arguments(parser):
     parser.add_argument("--do_eval", action="store_true", help="Perform evaluation on the validation set")
     parser.add_argument("--do_test", action="store_true", help="Perform evaluation on the test set")
     
+    # Testing arguments
+    parser.add_argument("--test_src_lang_only", action="store_true", help="Test source language only")
+
     args = parser.parse_args()
     assert 2 * args.epochs >= args.slices + 1, "Not enough epochs per slice"
     assert args.load_in_4bit + args.load_in_8bit <= 1, "Only one quantization method can be used"

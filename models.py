@@ -9,7 +9,7 @@ from transformers.utils import logging
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from pytorch_lightning.core.saving import save_hparams_to_yaml
 
-from datamodules import XNLIDataModule, FLORESDataModule
+from datamodules import XNLIDataModule, FLORESDataModule, BMLAMADataModule
 
 logging.get_logger("transformers").setLevel(logging.ERROR)
 
@@ -20,16 +20,22 @@ class MultilingualModel(L.LightningModule):
         save_hparams_to_yaml(os.path.join(hparams.output_dir, "hparams.yaml"), hparams)
         
 
-        self.tokenizer = AutoTokenizer.from_pretrained(hparams.model, cache_dir=hparams.cache_dir)
+        self.tokenizer = AutoTokenizer.from_pretrained(hparams.model, cache_dir=hparams.cache_dir, resume_download=True)
         if hparams.task == "xnli":
             self.datamodule = XNLIDataModule(hparams, self.tokenizer)
         elif hparams.task == "flores":
             self.datamodule = FLORESDataModule(hparams, self.tokenizer)
+        elif "bmlama" in hparams.task:
+            self.datamodule = BMLAMADataModule(hparams, self.tokenizer)
         else:
             raise NotImplementedError(f"Task {hparams.task} not implemented.")
         self.model = None
 
         self.accuracy = Accuracy(task="multiclass", num_classes=self.tokenizer.vocab_size, ignore_index=-100)
+
+        self.target = "forget"
+        if self.hparams.negtv_fit == "retain":
+            self.target = "retain"
 
 
     def configure_model(self):
@@ -47,55 +53,98 @@ class MultilingualModel(L.LightningModule):
         
         if self.hparams.task == "xnli":
             self.model = self._load_model("SEQ_CLS", target_modules)
-        elif self.hparams.task == "flores":
+        elif self.hparams.task == "flores" or "bmlama" in self.hparams.task:
             self.model = self._load_model("CAUSAL_LM", target_modules)
         else:
             # self.model = self._load_model("CAUSAL_LM", target_modules)
             raise ValueError(f"Task {self.hparams.task} not supported.")
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
+    def forward(self, input_ids, attention_mask=None, labels=None, **inputs):
         return self.model(input_ids, attention_mask=attention_mask, labels=labels)
 
     def training_step(self, batch, batch_idx):
         outputs = self(**batch)
         loss = outputs.loss
-        name = self.datamodule.dataset_names["train"][self.current_epoch % len(self.datamodule.dataset_names["train"])]
-        self._log_metrics("train", batch, outputs, loss, name)
+        dataset_name = self.datamodule.dataset_names["train"][self.current_epoch % len(self.datamodule.dataset_names["train"])]
+        self._log_metrics("train", batch, outputs, loss, dataset_name)
         return loss
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         loss = outputs.loss
-        name = self.datamodule.dataset_names["valid"][dataloader_idx]
-        self._log_metrics("valid", batch, outputs, loss, name)
+        dataset_name = self.datamodule.dataset_names["valid"][dataloader_idx]
+        self._log_metrics("valid", batch, outputs, loss, dataset_name)
         return loss
 
     def test_step(self, batch, batch_idx, dataloader_idx=0):
         outputs = self(**batch)
         loss = outputs.loss
-        name = self.datamodule.dataset_names["test"][dataloader_idx]
-        self._log_metrics("test", batch, outputs, loss, name)
+        dataset_name = self.datamodule.dataset_names["test"][dataloader_idx]
+        self._log_metrics("test", batch, outputs, loss, dataset_name)
         return loss
 
-    def _log_metrics(self, split, batch, outputs, loss, name):
-        metrics = { f"{name}_loss": loss }
+    def _log_metrics(self, split, batch, outputs, loss, dataset_name):
+        metrics = { f"{dataset_name}_loss": loss }
         if self.hparams.task in ["xnli"]:
             preds = outputs.logits.argmax(dim=-1)
             accuracy = (preds == batch["labels"]).float().mean()
-            metrics[f"{name}_accuracy"] = accuracy
+            metrics[f"{dataset_name}_accuracy"] = accuracy
         elif self.hparams.task in ["flores"]:
             ppl = torch.exp(loss)
-            metrics[f"{name}_ppl"] = ppl
-            
-            target = "forget"
-            if self.hparams.negtv_fit == "retain":
-                target = "retain"
+            metrics[f"{dataset_name}_ppl"] = ppl
 
-            if split == "test" or target in name:
+            if self.target in dataset_name or split == "test":
                 ma = self._validation_ma(batch)
-                metrics[f"{name}_ma"] = ma
+                metrics[f"{dataset_name}_ma"] = ma
+        elif "bmlama" in self.hparams.task:
+            ppl = torch.exp(loss)
+            metrics[f"{dataset_name}_ppl"] = ppl
+
+            if self.target in dataset_name or split == "test":
+                pa, sent_loss = self._validation_pa(batch, dataset_name)
+                sent_ppl = torch.exp(sent_loss)
+                metrics[f"{dataset_name}_pa"] = pa
+                metrics[f"{dataset_name}_sent_ppl"] = sent_ppl
 
         self.log_dict(metrics, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
+    
+    def _validation_pa(self, batch, dataset_name):
+        lang = dataset_name.split("/")[-1].split("_")[-1]
+        batch_size = batch["input_ids"].size(0)
+        corr, tot = 0, 0
+        losses = []
+
+        for i in range(batch_size):
+            prompt = batch["prompt"][i]
+            answer_pred_probs = dict()
+            for j in range(len(batch["candidates"])):
+                cand = batch["candidates"][j][i]
+                if cand == "":
+                    continue
+                prompt_new = prompt.replace("<mask>", cand)
+                model_input = self.tokenizer(prompt_new, return_tensors='pt').to(self.device)
+                output = self.model(**model_input)
+                
+                if lang == "zh":
+                    logits = output['logits'][0, :-1] 
+                    token_ids = model_input['input_ids'][0, 1:]
+                else:
+                    logits = output['logits'][0, :-2] 
+                    token_ids = model_input['input_ids'][0, 1:-1]
+                
+                answer_pred_probs[cand] = torch.nn.CrossEntropyLoss(reduction='mean')(logits, token_ids)
+
+            # Precision@k (k=1)
+            top1 = sorted(answer_pred_probs.items(), key=lambda x: x[1], reverse=False)[0][0]
+            if top1 == batch["answers"][i]:
+                corr += 1
+            tot += 1
+
+            losses.append(answer_pred_probs[batch["answers"][i]])
+
+        acc = corr / tot
+        loss = torch.stack(losses).mean()
+        return acc, loss
     
     def _validation_ma(self, batch):
         labels, preds = [], []

@@ -1,4 +1,5 @@
 import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import json
 import wandb
 import torch
@@ -18,7 +19,7 @@ from torch.distributed.fsdp import MixedPrecision
 
 from config import add_arguments
 from models import MultilingualModel, ShardEnsembleModel
-from callbacks import Callbacks, CustomMetricTracker, CustomRichProgressBar
+from callbacks import Callbacks, CustomMetricTracker
 
 def main(args, model_path=None):
     L.seed_everything(args.seed, workers=True)
@@ -71,7 +72,6 @@ def main(args, model_path=None):
     cb = Callbacks(args)
     callbacks = [
         CustomMetricTracker(args),
-        # CustomRichProgressBar(),
         cb.get_checkpoint_callback(),
         cb.get_early_stopping(),
     ]
@@ -100,6 +100,10 @@ def main(args, model_path=None):
         if args.method == "negtaskvector":
             model = create_negtaskvector_model(args)
         trainer.validate(model, datamodule=model.datamodule)
+    if args.do_test:
+        if args.method == "negtaskvector":
+            model = create_negtaskvector_model(args)
+        trainer.test(model, datamodule=model.datamodule)
 
 def create_negtaskvector_model(args):
     from task_vectors import TaskVector
@@ -172,25 +176,30 @@ if __name__ == "__main__":
         args.do_eval = False
         args.negtv_fit = "forget"
         main(args)
-
+        wandb.finish()
+        
         args.negtv_fit = "retain"
         main(args)
+        wandb.finish()
 
         if do_eval:
             args.do_eval = True
             args.do_train = False
             args.negtv_fit = "forget"
+            args.wandb_mode = "disabled"
             main(args)
     
     elif args.do_train and args.method == "negtaskvector" and args.negtv_fit == "retain":
         do_eval = args.do_eval
         args.do_eval = False
         main(args)
+        wandb.finish()
 
         if do_eval:
             args.do_eval = True
             args.do_train = False
             args.negtv_fit = "forget"
+            args.wandb_mode = "disabled"
             main(args)
 
     elif args.do_train and "sisa" in args.method:

@@ -1,4 +1,4 @@
-
+import torch
 import random
 import lightning as L
 
@@ -8,12 +8,10 @@ from collections import defaultdict
 from torch.utils.data import Dataset, DataLoader
 
 
-class FLORESDataModule(L.LightningDataModule):
-    SUPPORTED_LANGUAGES = [
-        "en", "fr", "es", "zh", "ar", "vi",
-        "eu", "ur", "te", "sw",
-        # "ne", "mr", "ml", "yo", "xh", "zu",
-    ]
+class BMLAMADataModule(L.LightningDataModule):
+    SUPPORTED_LANGUAGES_17 = ["en", "fr", "es", "ar", "zh", "vi", "ca"]
+    SUPPORTED_LANGUAGES_53 = ["en", "fr", "es", "ar", "pt", "vi",
+                              "ca", "hi", "bn", "id", "eu", "ur"]
 
     def __init__(self, args, tokenizer):
         super().__init__()
@@ -22,7 +20,11 @@ class FLORESDataModule(L.LightningDataModule):
 
         self.method = args.method
         self.task = args.task
-        
+
+        self.SUPPORTED_LANGUAGES = self.SUPPORTED_LANGUAGES_53
+        if self.task == "bmlama17":
+            self.SUPPORTED_LANGUAGES = self.SUPPORTED_LANGUAGES_17
+
         self.lang = {
             "forget": args.forget_lang,
             "retain": args.retain_lang,
@@ -74,7 +76,7 @@ class FLORESDataModule(L.LightningDataModule):
         # Prepare datasets
         self.datasets = defaultdict(list)
         self.dataset_names = defaultdict(list)
-        
+
         if stage == "fit":
             dataset_mapping = {
                 "train": ["forget", "retain"],
@@ -92,22 +94,24 @@ class FLORESDataModule(L.LightningDataModule):
 
             # Randomly sample languages
             for split in dataset_mapping["train"]:
-                self.datasets["train"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=self.data_lang[split]))
+                self.datasets["train"].append(BMLAMADataset(self.data[split], self.tokenizer, self.max_length, lang=self.data_lang[split]))
                 self.dataset_names["train"].append(f"train/{self.data_name[split]}")
 
+            # Evaluate all training languages
             for lang in self.lang["retain"]:
                 for split in dataset_mapping["valid"]:
-                    self.datasets["valid"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
+                    self.datasets["valid"].append(BMLAMADataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
                     self.dataset_names["valid"].append(f"val/{self.data_name[split]}_{lang}")
 
         elif stage == "validate":
             dataset_mapping = {
                 "valid": ["valid", "forget"],
             }
-             
+
+            # Evaluate all training languages
             for lang in self.lang["retain"]:
                 for split in dataset_mapping["valid"]:
-                    self.datasets["valid"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
+                    self.datasets["valid"].append(BMLAMADataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
                     self.dataset_names["valid"].append(f"val/{self.data_name[split]}_{lang}")
 
         elif stage == "test":
@@ -115,15 +119,16 @@ class FLORESDataModule(L.LightningDataModule):
                 "test": ["test", "forget"],
             }
 
+            # Test different languages
             langs = self.lang["retain"] if self.args.test_src_lang_only else self.SUPPORTED_LANGUAGES
             for lang in langs:
                 for split in dataset_mapping["test"]:
-                    self.datasets["test"].append(FLORESDataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
+                    self.datasets["test"].append(BMLAMADataset(self.data[split], self.tokenizer, self.max_length, lang=lang))
                     self.dataset_names["test"].append(f"test/{self.data_name[split]}_{lang}")
-        
+            
         else:
             raise ValueError(f"Invalid stage: {stage}")
-
+        
     def train_dataloader(self):
         return DataLoader(    
             self.datasets["train"][self.trainer.current_epoch % len(self.datasets["train"])],
@@ -160,8 +165,8 @@ class FLORESDataModule(L.LightningDataModule):
         return dataloaders
 
 
-class FLORESDataset(Dataset):
-    def __init__(self, data, tokenizer, max_seq_len=256, lang=["en"]):
+class BMLAMADataset(Dataset):
+    def __init__(self, data, tokenizer, max_seq_len=32, lang="en"):
         self.data = data
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
@@ -179,43 +184,75 @@ class FLORESDataset(Dataset):
         else:
             lang = self.lang
 
-        item = self.data[idx][lang]
+        item = self.data[idx]
+        prompt_str = item["prompt"][lang].replace("\u200b", "")
+        answers = item["answers"][lang]
+        candidates = item["candidates"][lang]
+        prompt = prompt_str.replace("<mask>", answers[0])
+
         inputs = self.tokenizer(
-            item,
+            prompt,
+            return_tensors="pt",
             max_length=self.max_seq_len,
             padding="max_length",
             truncation=True,
-            return_tensors="pt",
         )
         labels = inputs["input_ids"].clone()
-        labels[labels == self.tokenizer.pad_token_id] = -100
+        mask = torch.ones_like(labels)
+
+        # Mask all tokens except the answer token s.t. loss is only computed on the answer token
+        if "xglm" in self.tokenizer.name_or_path:
+            ans_token_id = self.tokenizer.encode(" "+answers[0])[1:]    # Add space for exact match, remove cls token
+        elif "bloom" in self.tokenizer.name_or_path:
+            ans_token_id = self.tokenizer.encode(" "+answers[0])        # Add space for exact match
+        else:
+            raise ValueError(f"Unsupported model: {self.tokenizer.name_or_path}")
+
+        # Ensure answer token is in labels
+        for _id in ans_token_id:
+            assert _id in labels
+            assert _id not in self.tokenizer.all_special_ids
+            mask[labels == _id] = 0
+
+        # Mask all other tokens
+        labels[mask == 1] = -100
+
+        # Pad candidates to length 10
+        candidates += [""] * (10 - len(candidates))
 
         return {
             "input_ids": inputs["input_ids"].squeeze(),
             "attention_mask": inputs["attention_mask"].squeeze(),
             "labels": labels.squeeze(),
+            "prompt": prompt_str,
+            "candidates": candidates,
+            "answers": answers[0],
         }
 
 
 if __name__ == "__main__":
     from transformers import AutoTokenizer
-    
+
     data_dir = "../../research/multilingual-unlearning/data"    
-    data = load_dataset("json", data_files=str((Path(__file__).parent.parent  / data_dir / "flores/valid.jsonl").resolve()), cache_dir="../../.cache")["train"]
+    data = load_dataset("json", data_files=str((Path(__file__).parent.parent  / data_dir / "bmlama53/valid.jsonl").resolve()), cache_dir="../../.cache")["train"]
     tokenizer = AutoTokenizer.from_pretrained(
                     "bigscience/bloom-560M",
                     cache_dir="../../.cache",
                     local_files_only=True,
                 )
-    SUPPORTED_LANGUAGES = [
-        "en", "fr", "es", "zh", "ar", "vi",
-        "eu", "ur", "ne", "mr", "te", "ml",
-        "sw", "yo", "xh", "zu",
-    ]
-    for lang in SUPPORTED_LANGUAGES:
+    dataset = BMLAMADataset(data, tokenizer, 32, "en")
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
+
+    SUPPORTED_LANGUAGES_17 = ["en", "fr", "es", "ar", "zh", "vi", "ca"]
+    SUPPORTED_LANGUAGES_53 = ["en", "fr", "es", "ar", "pt", "vi",
+                              "ca", "hi", "bn", "id", "eu", "ur"]
+    for lang in SUPPORTED_LANGUAGES_53:
         lengths = []
-        for item in data[lang]:
-            lengths.append(len(tokenizer.encode(item)))
+        for item in data:
+            prompt = item["prompt"][lang].replace("\u200b", "")
+            answers = item["answers"][lang]
+            prompt = prompt.replace("<mask>", answers[0])
+            lengths.append(len(tokenizer(prompt)["input_ids"]))
         
         print(f"Language: {lang}")
         print(f"Max length: {max(lengths)}")

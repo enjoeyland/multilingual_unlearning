@@ -5,17 +5,17 @@ IFS=$'\n\t'
 
 method="negtaskvector"
 
-task="flores"
-langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
+task="bmlama53"
+langs=("en" "fr" "es" "ar" "pt" "vi" "ca" "hi" "bn" "id")
 
 world_size=1
-batch_size=8
+batch_size=16
 
+# learning_rate=("5e-4" "3e-4" "1e-4")
 # scaling_coef=("0.2" "0.3" "0.4" "0.5" "0.6" "0.7" "0.8" "0.9" "1.0")
-# retain_multiplier=("4" "5")
 
 # for sc in "${scaling_coef[@]}"; do
-# for rm in "${retain_multiplier[@]}"; do
+# for lr in "${learning_rate[@]}"; do
 python run.py \
     --model_name xglm-564M \
     --model facebook/xglm-564M \
@@ -29,9 +29,9 @@ python run.py \
     --max_length 256 \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --negtv_fit retain \
-    --forget_scaling_coef 1 \
-    --retain_scaling_coef 0.5 \
+    --negtv_fit both \
+    --forget_scaling_coef 0.08 \
+    --retain_scaling_coef 0 \
     --do_train \
     --seed 42 \
     --dp_strategy auto \
