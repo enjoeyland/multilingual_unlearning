@@ -94,13 +94,17 @@ def main(args, model_path=None):
     )
 
     if args.do_train:
+        assert args.method != "negtaskvector", "Negtaskvector method is not supported for training"
         trainer.fit(model, datamodule=model.datamodule)
 
     if args.do_eval:
+        assert args.method != "finetune", "Finetune method is not supported for evaluation"
         if args.method == "negtaskvector":
             model = create_negtaskvector_model(args)
         trainer.validate(model, datamodule=model.datamodule)
+        
     if args.do_test:
+        assert args.method != "finetune", "Finetune method is not supported for evaluation"
         if args.method == "negtaskvector":
             model = create_negtaskvector_model(args)
         trainer.test(model, datamodule=model.datamodule)
@@ -114,7 +118,14 @@ def create_negtaskvector_model(args):
     saved_ckpt = [item for item in saved_ckpt if "negtv" not in item.split("/")[-1]]
     
     forget_ckpt = [item for item in saved_ckpt if "forget" in item.split("/")[-1]]
-    forget_ckpt = sorted(forget_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
+    try:
+        forget_ckpt = sorted(forget_ckpt, key=lambda x: float(x.split("/")[-1].split(".ckpt")[0].split("fxppl=")[-1].split("-")[0]))[0]
+    except IndexError:
+        print(forget_ckpt)
+        raise FileNotFoundError(f"Forget ckpt not found in {args.output_dir}")
+    except ValueError as e:
+        print(forget_ckpt)
+        print(e)
     forget_ckpt_metrics = forget_ckpt.split("/")[-1].split("-")[0]
     forget_tv = TaskVector(pretraind_model, forget_ckpt)
 
@@ -124,14 +135,21 @@ def create_negtaskvector_model(args):
     if args.retain_scaling_coef != 0:
         retain_ckpt = [item for item in saved_ckpt if f"retain{args.retain_multiplier}" in item.split("/")[-1]]
         assert retain_ckpt, f"Retain ckpt not found in {args.output_dir}"
-        retain_ckpt = sorted(retain_ckpt, key=lambda x: float(x.split("/")[-1].split("-")[0].split("=")[1]), reverse=True)[0]
+        try:
+            retain_ckpt = sorted(retain_ckpt, key=lambda x: float(x.split("/")[-1].split(".ckpt")[0].split("rxppl=")[-1].split("-")[0]))[0]
+        except IndexError:
+            print(retain_ckpt)
+            raise FileNotFoundError(f"Retain ckpt not found in {args.output_dir}")
+        except ValueError as e:
+            print(retain_ckpt)
+            print(e)
         retain_ckpt_metrics = retain_ckpt.split("/")[-1].split("-")[0]
         retain_tv = TaskVector(pretraind_model, retain_ckpt)
 
         model = retain_tv.apply_to(model, scaling_coef=args.retain_scaling_coef)
         model_name += f"-rs{args.retain_scaling_coef}_{retain_ckpt_metrics}"
     
-    model_path = os.path.join(args.output_dir, f"{model_name}.ckpt")
+    # model_path = os.path.join(args.output_dir, f"{model_name}.ckpt")
     # if not os.path.exists(model_path):
     #     torch.save(model, model_path)
     return model
@@ -168,37 +186,68 @@ if __name__ == "__main__":
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
 
-    if not args.do_train and args.method == "negtaskvector":
-        args.negtv_fit = "forget"
+    if not args.do_train:
+        args.fit_target = "forget"
 
-    if args.do_train and args.method == "negtaskvector" and args.negtv_fit == "both":
+    if args.do_train and args.method in ["finetune", "negtaskvector"] and args.fit_target == "both":
+        method = args.method
+        args.method = "finetune"
         do_eval = args.do_eval
         args.do_eval = False
-        args.negtv_fit = "forget"
+        do_test = args.do_test
+        args.do_test = False
+        args.fit_target = "forget"
         main(args)
         wandb.finish()
         
-        args.negtv_fit = "retain"
+        args.fit_target = "retain"
         main(args)
         wandb.finish()
 
-        if do_eval:
-            args.do_eval = True
+        if do_eval or do_test:
+            args.method = method
+            args.do_eval = do_eval
+            args.do_test = do_test
             args.do_train = False
-            args.negtv_fit = "forget"
+            args.fit_target = "forget"
             args.wandb_mode = "disabled"
             main(args)
-    
-    elif args.do_train and args.method == "negtaskvector" and args.negtv_fit == "retain":
+
+    elif args.do_train and args.method in ["finetune", "negtaskvector"] and args.fit_target == "retain":
+        method = args.method
+        args.method = "finetune"
         do_eval = args.do_eval
         args.do_eval = False
+        do_test = args.do_test
+        args.do_test = False
         main(args)
         wandb.finish()
 
-        if do_eval:
-            args.do_eval = True
+        if do_eval or do_test:
+            args.method = method
+            args.do_eval = do_eval
+            args.do_test = do_test
             args.do_train = False
-            args.negtv_fit = "forget"
+            args.fit_target = "forget"
+            args.wandb_mode = "disabled"
+            main(args)
+
+    elif args.do_train and args.method in ["finetune", "negtaskvector"] and args.fit_target == "forget":
+        method = args.method
+        args.method = "finetune"
+        do_eval = args.do_eval
+        args.do_eval = False
+        do_test = args.do_test
+        args.do_test = False
+        main(args)
+        wandb.finish()
+
+        if do_eval or do_test:
+            args.method = method
+            args.do_eval = do_eval
+            args.do_test = do_test
+            args.do_train = False
+            args.fit_target = "forget"
             args.wandb_mode = "disabled"
             main(args)
 

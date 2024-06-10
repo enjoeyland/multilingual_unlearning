@@ -33,10 +33,6 @@ class MultilingualModel(L.LightningModule):
 
         self.accuracy = Accuracy(task="multiclass", num_classes=self.tokenizer.vocab_size, ignore_index=-100)
 
-        self.target = "forget"
-        if self.hparams.negtv_fit == "retain":
-            self.target = "retain"
-
 
     def configure_model(self):
         if self.model is not None:
@@ -93,21 +89,46 @@ class MultilingualModel(L.LightningModule):
             ppl = torch.exp(loss)
             metrics[f"{dataset_name}_ppl"] = ppl
 
-            if self.target in dataset_name or split == "test":
+            if self.hparams.method != "finetune" and self.hparams.fit_target in dataset_name or split == "test":
                 ma = self._validation_ma(batch)
                 metrics[f"{dataset_name}_ma"] = ma
-        elif "bmlama" in self.hparams.task:
-            ppl = torch.exp(loss)
-            metrics[f"{dataset_name}_ppl"] = ppl
 
-            if self.target in dataset_name or split == "test":
+        elif "bmlama" in self.hparams.task:
+            if self.hparams.method != "finetune" and self.hparams.fit_target in dataset_name or split == "test":
                 pa, sent_loss = self._validation_pa(batch, dataset_name)
                 sent_ppl = torch.exp(sent_loss)
                 metrics[f"{dataset_name}_pa"] = pa
                 metrics[f"{dataset_name}_sent_ppl"] = sent_ppl
+            else:
+                sent_loss = self._validation_sent_loss_only(batch, dataset_name)
+                sent_ppl = torch.exp(sent_loss)
+                metrics[f"{dataset_name}_sent_ppl"] = sent_ppl
+
 
         self.log_dict(metrics, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
     
+    def _validation_sent_loss_only(self, batch, dataset_name):
+        lang = dataset_name.split("/")[1].split("_")[0]
+        batch_size = batch["input_ids"].size(0)
+        losses = []
+
+        for i in range(batch_size):
+            prompt = batch["prompt"][i]
+            prompt_new = prompt.replace("<mask>", batch["answers"][i])
+            model_input = self.tokenizer(prompt_new, return_tensors='pt').to(self.device)
+            output = self.model(**model_input)
+            if lang == "zh":
+                logits = output['logits'][0, :-1] 
+                token_ids = model_input['input_ids'][0, 1:]
+            else:
+                logits = output['logits'][0, :-2] 
+                token_ids = model_input['input_ids'][0, 1:-1]
+            loss = torch.nn.CrossEntropyLoss(reduction='mean')(logits, token_ids)
+            losses.append(loss)
+
+        loss = torch.stack(losses).mean()
+        return loss
+
     def _validation_pa(self, batch, dataset_name):
         lang = dataset_name.split("/")[-1].split("_")[-1]
         batch_size = batch["input_ids"].size(0)

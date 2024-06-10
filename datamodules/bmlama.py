@@ -83,10 +83,10 @@ class BMLAMADataModule(L.LightningDataModule):
                 "valid": ["valid", "forget"],
             }
 
-            if self.method == "negtaskvector":
-                if self.args.negtv_fit == "forget":
+            if self.method == "finetune":
+                if self.args.fit_target == "forget":
                     dataset_mapping["train"] = ["forget"]
-                elif self.args.negtv_fit == "retain":
+                elif self.args.fit_target == "retain":
                     dataset_mapping["train"] = ["retain"]
                     dataset_mapping["valid"] = ["valid", "retain"]
             elif "sisa" in self.method:

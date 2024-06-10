@@ -20,8 +20,10 @@ def add_arguments(parser):
     parser.add_argument("--shards", default=5, type=int, help="Number of shards to use, default 5")
     parser.add_argument("--slices", default=1, type=int, help="Number of slices to use, default 1")
 
+    # Finetuning arguments
+    parser.add_argument("--fit_target", default="both", choices=["both", "forget", "retain"], help="Fit target, default both")
+
     # Negtaskvector arguments
-    parser.add_argument("--negtv_fit", default="both", choices=["both", "forget", "retain"], help="Negtaskvector fit, default both")
     parser.add_argument("--forget_scaling_coef", default=1.0, type=float, help="Scaling coefficient, default 1.0")
     parser.add_argument("--retain_scaling_coef", default=0, type=float, help="Scaling coefficient, default 0")
 

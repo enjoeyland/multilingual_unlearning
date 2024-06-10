@@ -7,39 +7,48 @@ method="negtaskvector"
 
 task="flores"
 langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
+max_length=256
+# task="bmlama53"
+# langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
+# max_length=32
 
 world_size=1
-batch_size=32
+batch_size=16
 
-retain_multiplier=("1")
-scaling_coef=("0.3" "0.2" "0.1" "0.08" "0.06" "0.04" "0.02")
+warmup_ratio=("0")
 
-for rm in "${retain_multiplier[@]}"; do
+seed="42"
+lr="5e-5"
+scaling_coef=("0.04" "0.08" "0.1" "0.2" "0.4" "0.5" "0.6" "0.7")
+# scaling_coef=("0.1" "0.2")
+# scaling_coef=("0.4" "0.5" "0.6" "0.7")
+
+for wr in "${warmup_ratio[@]}"; do
 for sc in "${scaling_coef[@]}"; do
-echo "Retain Multiplier: $rm, Scaling Coefficient: $sc"
+echo "Scaling Coefficient: $sc"
 python run.py \
-    --model_name xglm-564M \
-    --model facebook/xglm-564M \
+    --model_name bloom-560m \
+    --model bigscience/bloom-560m \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
     --forget_lang ${langs[@]} \
     --retain_lang ${langs[@]} \
     --forget_num 32 \
-    --retain_multiplier $rm \
-    --max_length 256 \
+    --retain_multiplier 1 \
+    --max_length $max_length \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --forget_scaling_coef $sc \
     --retain_scaling_coef 0 \
-    --seed 42 \
+    --seed $seed \
     --wandb_mode disabled \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
-    --learning_rate 5e-4 \
+    --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio 0.1 \
+    --warmup_ratio $wr \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
@@ -48,6 +57,6 @@ python run.py \
     --eval_steps 1 \
     --max_tolerance 5 \
     --output_dir ".checkpoints/" \
-    --do_eval
+    --do_test
 done
 done
