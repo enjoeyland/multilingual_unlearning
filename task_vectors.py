@@ -86,16 +86,20 @@ class TaskVector():
     
     def _get_state_dict(self, ckpt):
         model = self._get_model(ckpt)
-        if isinstance(model, dict):
+        if isinstance(model, dict) and 'state_dict' in model:
             state_dict = model['state_dict']
+        elif isinstance(model, dict) and 'module' in model:
+            state_dict = model['module']
         elif isinstance(model, torch.nn.Module):
             model.to('cuda:0')
             state_dict = model.state_dict()
         return state_dict
     
     def _get_model(self, ckpt):
-        if isinstance(ckpt, str) and osp.exists(ckpt):
+        if isinstance(ckpt, str) and osp.exists(ckpt) and osp.isfile(ckpt):
             model = torch.load(ckpt)
+        elif isinstance(ckpt, str) and osp.exists(ckpt) and osp.isdir(ckpt):
+            model = torch.load(f"{ckpt}/checkpoint/mp_rank_00_model_states.pt")
         elif isinstance(ckpt, torch.nn.Module):
             model = ckpt
         return model

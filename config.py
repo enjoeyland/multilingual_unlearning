@@ -2,7 +2,7 @@ def add_arguments(parser):
     # Model arguments
     parser.add_argument("--model_name", default="mt5-base", help="Model name, default mt5-base")
     parser.add_argument("--model", default="google/mt5-base", help="Model to use, default google/mt5-base")
-    parser.add_argument("--method", default="original", choices=["original", "sisa", "sisa-retain", "negtaskvector"], help="Method to use, default original")
+    parser.add_argument("--method", default="original", choices=["original", "sisa", "sisa-retain", "negtaskvector", "finetune"], help="Method to use, default original")
     parser.add_argument("--cache_dir", help="Location of the cache, default None")
 
     # Data arguments
@@ -38,7 +38,7 @@ def add_arguments(parser):
     parser.add_argument("--load_in_4bit", action="store_true", help="Load model in 4-bit quantization")
 
     parser.add_argument("--dp_strategy", default="auto", help="Distributed training strategy, default auto",
-                        choices=["auto", "ddp", "fsdp", "deepspeed", "deepspeed_stage_3", "deepspeed_stage_3_offload"])
+                        choices=["auto", "ddp", "fsdp", "deepspeed", "deepspeed_stage_2", "deepspeed_stage_3", "deepspeed_stage_3_offload"])
     parser.add_argument("--bf16", action="store_true")
 
     parser.add_argument("--optimizer", default="adamw", choices=["adam", "adamw"], help="Optimizer to use, default adamw")

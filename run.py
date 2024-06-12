@@ -10,7 +10,7 @@ import lightning as L
 from glob import glob
 from datasets import load_dataset
 
-from lightning.pytorch.loggers import WandbLogger, CSVLogger
+from lightning.pytorch.loggers import WandbLogger
 
 from lightning.pytorch.accelerators import find_usable_cuda_devices
 from lightning.pytorch.strategies import FSDPStrategy, DeepSpeedStrategy
@@ -50,11 +50,14 @@ def main(args, model_path=None):
 
 
     if args.dp_strategy == "fsdp":
-        strategy = FSDPStrategy(
-            auto_wrap_policy={MT5Block},
-            mixed_precision=MixedPrecision(param_dtype=torch.bfloat16, cast_forward_inputs=True) if args.bf16 else None,
-            sharding_strategy="FULL_SHARD",
-        )
+        if "mt5" in args.model_name:
+            strategy = FSDPStrategy(
+                auto_wrap_policy={MT5Block},
+                mixed_precision=MixedPrecision(param_dtype=torch.bfloat16, cast_forward_inputs=True) if args.bf16 else None,
+                sharding_strategy="FULL_SHARD",
+            )
+        else:
+            raise NotImplementedError(f"FS-DP is not implemented for {args.model_name}")
     else:
         strategy = args.dp_strategy
 
@@ -213,26 +216,7 @@ if __name__ == "__main__":
             args.wandb_mode = "disabled"
             main(args)
 
-    elif args.do_train and args.method in ["finetune", "negtaskvector"] and args.fit_target == "retain":
-        method = args.method
-        args.method = "finetune"
-        do_eval = args.do_eval
-        args.do_eval = False
-        do_test = args.do_test
-        args.do_test = False
-        main(args)
-        wandb.finish()
-
-        if do_eval or do_test:
-            args.method = method
-            args.do_eval = do_eval
-            args.do_test = do_test
-            args.do_train = False
-            args.fit_target = "forget"
-            args.wandb_mode = "disabled"
-            main(args)
-
-    elif args.do_train and args.method in ["finetune", "negtaskvector"] and args.fit_target == "forget":
+    elif args.do_train and args.method in ["finetune", "negtaskvector"] and args.fit_target in ["forget", "retain"]:
         method = args.method
         args.method = "finetune"
         do_eval = args.do_eval

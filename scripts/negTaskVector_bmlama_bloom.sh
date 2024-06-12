@@ -5,29 +5,20 @@ IFS=$'\n\t'
 
 method="negtaskvector"
 
-task="flores"
-langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
-max_length=125
-# task="bmlama53"
-# langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
-# max_length=32
+task="bmlama53"
+langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
+max_length=32
 
 world_size=1
 batch_size=32
 
-wr="0"
+seed=("42" "0" "485")
+learning_rate=("1e-5" "5e-6" "3e-6")
+warmup_ratio=("0")
 
-seed=("0" "42" "485")
-# seed=("42")
-lr="5e-5"
-# scaling_coef=("1 0.45" "1 0.55" "1 0.3" "1.5 0.9" "1.5 1" "1.5 1.1")
-scaling_coef=("0.3 0.25" "0.2 0.15" "0.2 0.1")
-# scaling_coef=("0.08 0")
-
-for sc in "${scaling_coef[@]}"; do
 for s in "${seed[@]}"; do
-IFS=' ' read -r fsc rsc <<< "$sc"
-echo "Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
+for wr in "${warmup_ratio[@]}"; do
+for lr in "${learning_rate[@]}"; do
 python run.py \
     --model_name bloom-560m \
     --model bigscience/bloom-560m \
@@ -41,10 +32,9 @@ python run.py \
     --max_length $max_length \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --forget_scaling_coef $fsc \
-    --retain_scaling_coef $rsc \
+    --fit_target both \
+    --do_train \
     --seed $s \
-    --wandb_mode disabled \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
@@ -57,8 +47,8 @@ python run.py \
     --gradient_accumulation_steps $((32 / world_size / batch_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
-    --max_tolerance 5 \
-    --output_dir ".checkpoints/" \
-    --do_test
+    --max_tolerance 10 \
+    --output_dir ".checkpoints/"
+done
 done
 done

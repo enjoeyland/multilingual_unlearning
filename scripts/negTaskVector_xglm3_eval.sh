@@ -12,25 +12,23 @@ max_length=125
 # langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
 # max_length=32
 
+
 world_size=1
-batch_size=32
+batch_size=16
+dp_strategy="auto"
 
-wr="0"
 
-seed=("0" "42" "485")
-# seed=("42")
-lr="5e-5"
-# scaling_coef=("1 0.45" "1 0.55" "1 0.3" "1.5 0.9" "1.5 1" "1.5 1.1")
-scaling_coef=("0.3 0.25" "0.2 0.15" "0.2 0.1")
-# scaling_coef=("0.08 0")
+seed=42
+learning_rate=("3e-5")
+scaling_coef=("0.3 0" "0.2 0" "0.1 0" "0.08 0" "0.06 0" "0.04 0" "0.02 0" "1 0.7" "1 0.6" "1 0.5" "1 0.4")
 
+for lr in "${learning_rate[@]}"; do
 for sc in "${scaling_coef[@]}"; do
-for s in "${seed[@]}"; do
 IFS=' ' read -r fsc rsc <<< "$sc"
-echo "Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
+echo "Learning Rate: $lr, Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
 python run.py \
-    --model_name bloom-560m \
-    --model bigscience/bloom-560m \
+    --model_name xglm-2.9B \
+    --model facebook/xglm-2.9B \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
@@ -43,22 +41,22 @@ python run.py \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --forget_scaling_coef $fsc \
     --retain_scaling_coef $rsc \
-    --seed $s \
+    --seed $seed \
     --wandb_mode disabled \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
     --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio $wr \
+    --warmup_ratio 0 \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
-    --gradient_accumulation_steps $((32 / world_size / batch_size)) \
+    --gradient_accumulation_steps $((16 / batch_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
     --max_tolerance 5 \
     --output_dir ".checkpoints/" \
-    --do_test
+    --do_eval
 done
 done

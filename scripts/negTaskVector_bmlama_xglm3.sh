@@ -5,22 +5,28 @@ IFS=$'\n\t'
 
 method="negtaskvector"
 
-task="flores"
-langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
+task="bmlama53"
+langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
+max_length=32
 
-world_size=1
-batch_size=8
 
+model_name="xglm-2.9B"
+world_size=2
+batch_size=16
+warmup_ratio=0
+dp_strategy="deepspeed_stage_2"
+
+# seed=("0" "485")
 seed=("42")
-learning_rate=("5e-5")
-warmup_ratio=("0")
+learning_rate=("1e-5" "3e-5" "5e-5")
+fit_target=("forget" "retain")
 
 for s in "${seed[@]}"; do
-for wr in "${warmup_ratio[@]}"; do
 for lr in "${learning_rate[@]}"; do
+for ft in "${fit_target[@]}"; do
 python run.py \
-    --model_name bloom-560m \
-    --model bigscience/bloom-560m \
+    --model_name $model_name \
+    --model "facebook/$model_name" \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
@@ -28,25 +34,25 @@ python run.py \
     --retain_lang ${langs[@]} \
     --forget_num 32 \
     --retain_multiplier 1 \
-    --max_length 256 \
+    --max_length $max_length \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --fit_target both \
+    --fit_target $ft \
     --do_train \
     --seed $s \
-    --dp_strategy auto \
+    --dp_strategy $dp_strategy \
     --bf16 \
     --optimizer adamw \
     --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio $wr \
+    --warmup_ratio $warmup_ratio \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
-    --gradient_accumulation_steps $((32 / world_size / batch_size)) \
+    --gradient_accumulation_steps $((32 / batch_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
-    --max_tolerance 5 \
+    --max_tolerance 10 \
     --output_dir ".checkpoints/"
 done
 done

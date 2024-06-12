@@ -33,7 +33,6 @@ class MultilingualModel(L.LightningModule):
 
         self.accuracy = Accuracy(task="multiclass", num_classes=self.tokenizer.vocab_size, ignore_index=-100)
 
-
     def configure_model(self):
         if self.model is not None:
             return
@@ -105,7 +104,7 @@ class MultilingualModel(L.LightningModule):
                 metrics[f"{dataset_name}_sent_ppl"] = sent_ppl
 
 
-        self.log_dict(metrics, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False)
+        self.log_dict(metrics, on_epoch=True, prog_bar=True, logger=True, sync_dist=True, add_dataloader_idx=False, batch_size=self.hparams.per_device_batch_size)
     
     def _validation_sent_loss_only(self, batch, dataset_name):
         lang = dataset_name.split("/")[1].split("_")[0]
