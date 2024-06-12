@@ -1,9 +1,8 @@
 import torch
 import pandas as pd
 
-from lightning.pytorch.callbacks import Callback, ModelCheckpoint, RichProgressBar
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from lightning.pytorch.callbacks.early_stopping import EarlyStopping
-
 
 class Callbacks:
     def __init__(self, args):
@@ -11,11 +10,7 @@ class Callbacks:
 
         self.max_tolerance = args.max_tolerance
         if args.model_name in ["xglm-2.9B", "bloom-3b"] and args.method == "finetune":
-        #     self.save_last = False
-        #     self.save_top_k = 1
-            # self.every_n_epochs = 1
-            self.every_n_epochs = 5
-
+            self.every_n_epochs = args.epochs
         else:
             self.every_n_epochs = 5 if args.task != "xnli" else 1
 

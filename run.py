@@ -20,6 +20,7 @@ from torch.distributed.fsdp import MixedPrecision
 from config import add_arguments
 from models import MultilingualModel, ShardEnsembleModel
 from callbacks import Callbacks, CustomMetricTracker
+from utils import deepspeed_weights_only, update_deepspeed_initalize
 
 def main(args, model_path=None):
     L.seed_everything(args.seed, workers=True)
@@ -61,16 +62,9 @@ def main(args, model_path=None):
     else:
         strategy = args.dp_strategy
 
-    # Add this line to solve AttributeError: 'PeftModelForSequenceClassification' object has no attribute 'base_model'
-    # which is caused by Initiate deepspeed both in lightning and peft
-    if "deepspeed" in args.dp_strategy and args.use_lora:
-        from contextlib import contextmanager
-
-        @contextmanager
-        def model_sharded_context(self):
-            yield
-        DeepSpeedStrategy.model_sharded_context = model_sharded_context
-
+    if "deepspeed" in args.dp_strategy:
+        deepspeed_weights_only(args.dp_strategy)
+        update_deepspeed_initalize(args.dp_strategy, args.use_lora)
 
     cb = Callbacks(args)
     callbacks = [
@@ -88,7 +82,6 @@ def main(args, model_path=None):
         max_epochs=args.epochs,
         val_check_interval=args.eval_steps,
         logger=wandb_logger,
-        # logger=csv_logger,
         log_every_n_steps=args.logging_steps,
         callbacks=callbacks,
         default_root_dir=args.output_dir,
@@ -179,7 +172,7 @@ if __name__ == "__main__":
     add_arguments(parser)
     args = parser.parse_args()
 
-    args.train_batch_size = (args.world_size if args.dp_strategy in ["auto", "ddp"] else 1) * args.per_device_batch_size * args.gradient_accumulation_steps
+    args.train_batch_size = (args.world_size if args.dp_strategy in ["auto", "ddp", "deepspeed_stage_2"] else 1) * args.per_device_batch_size * args.gradient_accumulation_steps
     args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
                     f"BS{args.train_batch_size}_LR{args.learning_rate}_W{args.warmup_ratio}_S{args.seed}"
     
@@ -188,6 +181,12 @@ if __name__ == "__main__":
 
     os.makedirs(args.cache_dir, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
+
+    # if torch.cuda.is_available():
+    #     gpu_name = torch.cuda.get_device_name(0)
+    #     if 'RTX A6000' in gpu_name or 'RTX 3090' in gpu_name: # Support Tensor Cores
+    #         torch.set_float32_matmul_precision('medium' if args.bf16 else 'high')
+    #         print(f'Set float32 matmul precision to medium for {gpu_name}')
 
     if not args.do_train:
         args.fit_target = "forget"

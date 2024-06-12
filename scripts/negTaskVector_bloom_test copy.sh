@@ -7,7 +7,7 @@ method="negtaskvector"
 
 # task="flores"
 # langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
-# max_length=256
+# max_length=125
 task="bmlama53"
 langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
 max_length=32
@@ -15,17 +15,22 @@ max_length=32
 world_size=1
 batch_size=32
 
-seed=("42")
-lr="1e-4"
-scaling_coef=("1 0.5" "0.08 0")
+wr="0"
 
-for s in "${seed[@]}"; do
+seed=("0" "485")
+# seed=("42")
+lr="5e-6"
+# scaling_coef=("1 0.45" "1 0.55" "1 0.3" "1.5 0.9" "1.5 1" "1.5 1.1")
+scaling_coef=("1 0.5" "0.04 0")
+# scaling_coef=("0.08 0")
+
 for sc in "${scaling_coef[@]}"; do
+for s in "${seed[@]}"; do
 IFS=' ' read -r fsc rsc <<< "$sc"
 echo "Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
 python run.py \
-    --model_name xglm-564M \
-    --model facebook/xglm-564M \
+    --model_name bloom-560m \
+    --model bigscience/bloom-560m \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
@@ -45,7 +50,7 @@ python run.py \
     --optimizer adamw \
     --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio 0.1 \
+    --warmup_ratio $wr \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \

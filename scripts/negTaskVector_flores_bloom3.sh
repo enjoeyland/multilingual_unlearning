@@ -8,25 +8,21 @@ method="negtaskvector"
 task="flores"
 langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
 
-# model_name="xglm-564M"
-# world_size=1
-# batch_size=8
-# warmup_ratio=0.1
-# dp_strategy="auto"
-# max_length=256
-
-model_name="xglm-2.9B"
+model_name="bloom-3b"
 world_size=2
-batch_size=16
+batch_size=4
 warmup_ratio=0
 dp_strategy="deepspeed_stage_2"
 max_length=125
 
+world_size=1
+dp_strategy="auto"
+
+
 seed=("42")
 # learning_rate=("3e-5")
-learning_rate=("3e-5" "5e-5" "1e-4")
+learning_rate=("5e-6" "1e-5" "3e-5")
 fit_target=("forget" "retain")
-# fit_target=("forget")
 
 for s in "${seed[@]}"; do
 for lr in "${learning_rate[@]}"; do
@@ -34,7 +30,7 @@ for ft in "${fit_target[@]}"; do
 echo "Running $method $task $s $lr $ft"
 python run.py \
     --model_name $model_name \
-    --model "facebook/$model_name" \
+    --model "bigscience/$model_name" \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
@@ -46,8 +42,6 @@ python run.py \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --fit_target $ft \
-    --forget_scaling_coef 1 \
-    --retain_scaling_coef 0.5 \
     --do_train \
     --seed $s \
     --dp_strategy $dp_strategy \

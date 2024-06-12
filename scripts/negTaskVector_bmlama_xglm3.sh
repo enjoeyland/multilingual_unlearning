@@ -49,10 +49,10 @@ python run.py \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
-    --gradient_accumulation_steps $((32 / batch_size)) \
+    --gradient_accumulation_steps $((32 / batch_size / world_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
-    --max_tolerance 10 \
+    --max_tolerance 30 \
     --output_dir ".checkpoints/"
 done
 done

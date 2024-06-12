@@ -10,8 +10,8 @@ from torch.utils.data import Dataset, DataLoader
 
 class BMLAMADataModule(L.LightningDataModule):
     SUPPORTED_LANGUAGES_17 = ["en", "fr", "es", "ar", "zh", "vi", "ca"]
-    SUPPORTED_LANGUAGES_53 = ["en", "fr", "es", "ar", "pt", "vi",
-                              "ca", "hi", "bn", "id", "eu", "ur"]
+    SUPPORTED_LANGUAGES_53 = ["en", "fr", "es", "pt", "ar", "vi",
+                              "ca", "hi", "bn", "eu", "ur"]
 
     def __init__(self, args, tokenizer):
         super().__init__()

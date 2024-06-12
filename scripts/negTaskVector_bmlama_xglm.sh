@@ -15,12 +15,15 @@ batch_size=32
 # learning_rate=("3e-4" "1e-4" "5e-4")
 # seed=("0" "485")
 seed=("42")
-learning_rate=("1e-4" "3e-4" "5e-4")
+# learning_rate=("1e-4" "3e-4" "5e-4")
+learning_rate=("5e-5")
+warmup_ratio=("0" "0.1")
 # scaling_coef=("0.2" "0.3" "0.4" "0.5" "0.6" "0.7" "0.8" "0.9" "1.0")
 
 # for sc in "${scaling_coef[@]}"; do
 for s in "${seed[@]}"; do
 for lr in "${learning_rate[@]}"; do
+for wr in "${warmup_ratio[@]}"; do
 python run.py \
     --model_name xglm-564M \
     --model facebook/xglm-564M \
@@ -42,7 +45,7 @@ python run.py \
     --optimizer adamw \
     --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio 0.1 \
+    --warmup_ratio $wr \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
@@ -51,5 +54,6 @@ python run.py \
     --eval_steps 1 \
     --max_tolerance 10 \
     --output_dir ".checkpoints/"
+done
 done
 done

@@ -12,13 +12,14 @@ max_length=32
 world_size=1
 batch_size=32
 
-seed=("42" "0" "485")
-learning_rate=("1e-5" "5e-6" "3e-6")
+seed=("0" "485")
+learning_rate=("5e-6")
 warmup_ratio=("0")
 
 for s in "${seed[@]}"; do
 for wr in "${warmup_ratio[@]}"; do
 for lr in "${learning_rate[@]}"; do
+echo "Running $method $task $s $lr $wr"
 python run.py \
     --model_name bloom-560m \
     --model bigscience/bloom-560m \
