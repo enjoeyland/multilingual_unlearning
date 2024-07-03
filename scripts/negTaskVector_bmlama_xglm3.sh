@@ -12,18 +12,19 @@ max_length=32
 
 model_name="xglm-2.9B"
 world_size=2
-batch_size=16
+batch_size=8
 warmup_ratio=0
 dp_strategy="deepspeed_stage_2"
 
 # seed=("0" "485")
 seed=("42")
-learning_rate=("1e-5" "3e-5" "5e-5")
+learning_rate=("3e-4" "5e-4" "1e-4")
 fit_target=("forget" "retain")
 
 for s in "${seed[@]}"; do
 for lr in "${learning_rate[@]}"; do
 for ft in "${fit_target[@]}"; do
+echo "Running $method $task $s $lr $ft"
 python run.py \
     --model_name $model_name \
     --model "facebook/$model_name" \

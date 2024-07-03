@@ -5,21 +5,20 @@ IFS=$'\n\t'
 
 method="negtaskvector"
 
-task="flores"
-langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
+task="bmlama53"
+langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
+max_length=32
 
 model_name="bloom-3b"
 world_size=2
 batch_size=8
 warmup_ratio=0
 dp_strategy="deepspeed_stage_2"
-max_length=125
 
-# seed=("42")
-seed=("0" "485")
-learning_rate=("1e-5")
-# learning_rate=("1e-6" "1e-5" "3e-5")
-fit_target=("both")
+
+seed=("42")
+learning_rate=("1e-4" "3e-4" "5e-5")
+fit_target=("retain")
 
 for s in "${seed[@]}"; do
 for lr in "${learning_rate[@]}"; do
@@ -39,8 +38,6 @@ python run.py \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --fit_target $ft \
-    --forget_scaling_coef 1 \
-    --retain_scaling_coef 0.5 \
     --do_train \
     --seed $s \
     --dp_strategy $dp_strategy \
@@ -56,8 +53,7 @@ python run.py \
     --logging_steps 32 \
     --eval_steps 1 \
     --max_tolerance 30 \
-    --output_dir ".checkpoints/" \
-    --do_test
+    --output_dir ".checkpoints/"
 done
 done
 done

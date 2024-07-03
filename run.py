@@ -108,7 +108,9 @@ def main(args, model_path=None):
 def create_negtaskvector_model(args):
     from task_vectors import TaskVector
     pretraind_model = MultilingualModel(args)
+    print(f"Start configuring pretrained model from pretrained_model")
     pretraind_model.configure_model()
+    print(f"Pretrained model is configured")
 
     saved_ckpt = glob(f"{args.output_dir}/*.ckpt")
     saved_ckpt = [item for item in saved_ckpt if "negtv" not in item.split("/")[-1]]
@@ -122,10 +124,14 @@ def create_negtaskvector_model(args):
     except ValueError as e:
         print(forget_ckpt)
         print(e)
-    forget_ckpt_metrics = forget_ckpt.split("/")[-1].split("-")[0]
+    forget_ckpt_metrics = forget_ckpt.split("/")[-1].split(".ckpt")[0].split("-")[0].split("_")[-1]
+    print("Start creating forget task vector model")
     forget_tv = TaskVector(pretraind_model, forget_ckpt)
+    print("Forget task vector model is created")
 
+    print("Start applying forget task vector to pretrained model")
     model = (-forget_tv).apply_to(pretraind_model, scaling_coef=args.forget_scaling_coef)
+    print("Forget task vector is applied to pretrained model")
     model_name = f"negtv_fs{args.forget_scaling_coef}_{forget_ckpt_metrics}"
 
     if args.retain_scaling_coef != 0:
@@ -139,7 +145,7 @@ def create_negtaskvector_model(args):
         except ValueError as e:
             print(retain_ckpt)
             print(e)
-        retain_ckpt_metrics = retain_ckpt.split("/")[-1].split("-")[0]
+        retain_ckpt_metrics = retain_ckpt.split("/")[-1].split(".ckpt")[0].split("-")[0].split("_")[-1]
         retain_tv = TaskVector(pretraind_model, retain_ckpt)
 
         model = retain_tv.apply_to(model, scaling_coef=args.retain_scaling_coef)
@@ -172,7 +178,7 @@ if __name__ == "__main__":
     add_arguments(parser)
     args = parser.parse_args()
 
-    args.train_batch_size = (args.world_size if args.dp_strategy in ["auto", "ddp", "deepspeed_stage_2"] else 1) * args.per_device_batch_size * args.gradient_accumulation_steps
+    args.train_batch_size = (args.world_size) * args.per_device_batch_size * args.gradient_accumulation_steps # <- I don't know when to use 1 instead of world_size
     args.output_dir = f".checkpoints/{args.model_name}/{args.task}/{args.method}/" + \
                     f"BS{args.train_batch_size}_LR{args.learning_rate}_W{args.warmup_ratio}_S{args.seed}"
     

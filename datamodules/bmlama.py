@@ -236,17 +236,14 @@ if __name__ == "__main__":
     data_dir = "../../research/multilingual-unlearning/data"    
     data = load_dataset("json", data_files=str((Path(__file__).parent.parent  / data_dir / "bmlama53/valid.jsonl").resolve()), cache_dir="../../.cache")["train"]
     tokenizer = AutoTokenizer.from_pretrained(
-                    "bigscience/bloom-560M",
+                    "bigscience/bloom-560m",
                     cache_dir="../../.cache",
                     local_files_only=True,
                 )
     dataset = BMLAMADataset(data, tokenizer, 32, "en")
     dataloader = DataLoader(dataset, batch_size=4, shuffle=False)
 
-    SUPPORTED_LANGUAGES_17 = ["en", "fr", "es", "ar", "zh", "vi", "ca"]
-    SUPPORTED_LANGUAGES_53 = ["en", "fr", "es", "ar", "pt", "vi",
-                              "ca", "hi", "bn", "id", "eu", "ur"]
-    for lang in SUPPORTED_LANGUAGES_53:
+    for lang in BMLAMADataModule.SUPPORTED_LANGUAGES_53:
         lengths = []
         for item in data:
             prompt = item["prompt"][lang].replace("\u200b", "")

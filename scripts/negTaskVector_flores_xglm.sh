@@ -17,16 +17,17 @@ langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
 
 model_name="xglm-2.9B"
 world_size=2
-batch_size=16
+batch_size=8
 warmup_ratio=0
 dp_strategy="deepspeed_stage_2"
 max_length=125
 
-seed=("42")
-# learning_rate=("3e-5")
-learning_rate=("3e-5" "5e-5" "1e-4")
+# seed=("42")
+seed=("0" "485")
+learning_rate=("1e-4")
+# learning_rate=("3e-5" "5e-5" "1e-4")
 fit_target=("forget" "retain")
-# fit_target=("forget")
+# fit_target=("retain")
 
 for s in "${seed[@]}"; do
 for lr in "${learning_rate[@]}"; do
@@ -47,7 +48,7 @@ python run.py \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --fit_target $ft \
     --forget_scaling_coef 1 \
-    --retain_scaling_coef 0.5 \
+    --retain_scaling_coef 0.6 \
     --do_train \
     --seed $s \
     --dp_strategy $dp_strategy \
@@ -63,7 +64,8 @@ python run.py \
     --logging_steps 32 \
     --eval_steps 1 \
     --max_tolerance 30 \
-    --output_dir ".checkpoints/"
+    --output_dir ".checkpoints/" \
+    --do_test
 done
 done
 done

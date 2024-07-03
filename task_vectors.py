@@ -98,7 +98,7 @@ class TaskVector():
     def _get_model(self, ckpt):
         if isinstance(ckpt, str) and osp.exists(ckpt) and osp.isfile(ckpt):
             model = torch.load(ckpt)
-        elif isinstance(ckpt, str) and osp.exists(ckpt) and osp.isdir(ckpt):
+        elif isinstance(ckpt, str) and osp.exists(ckpt) and osp.isdir(ckpt): # deepspeed checkpoint
             model = torch.load(f"{ckpt}/checkpoint/mp_rank_00_model_states.pt")
         elif isinstance(ckpt, torch.nn.Module):
             model = ckpt

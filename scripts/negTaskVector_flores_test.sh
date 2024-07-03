@@ -7,27 +7,25 @@ method="negtaskvector"
 
 task="flores"
 langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
-
-model_name="bloom-3b"
-world_size=2
-batch_size=8
-warmup_ratio=0
-dp_strategy="deepspeed_stage_2"
 max_length=125
+# task="bmlama53"
+# langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
+# max_length=32
 
-# seed=("42")
-seed=("0" "485")
-learning_rate=("1e-5")
-# learning_rate=("1e-6" "1e-5" "3e-5")
-fit_target=("both")
+world_size=1
+batch_size=32
+dp_strategy="auto"
 
-for s in "${seed[@]}"; do
-for lr in "${learning_rate[@]}"; do
-for ft in "${fit_target[@]}"; do
-echo "Running $method $task $s $lr $ft"
+# todo=("xglm-2.9B facebook/xglm-2.9B 0 1e-4 1 0.6" "xglm-2.9B facebook/xglm-2.9B 485 1e-4 1 0.6")
+todo=("bloom-3b bigscience/bloom-3b 0 1e-5 1 0.5" "bloom-3b bigscience/bloom-3b 485 1e-5 1 0.5")
+
+for t in "${todo[@]}"; do
+IFS=' ' read -r model_name model seed lr fsc rsc <<< "$t"
+echo "Running $method $task $seed $lr"
+echo "Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
 python run.py \
     --model_name $model_name \
-    --model "bigscience/$model_name" \
+    --model $model \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
@@ -38,26 +36,23 @@ python run.py \
     --max_length $max_length \
     --num_workers 4 \
     --data_dir ../../research/multilingual-unlearning/data/ \
-    --fit_target $ft \
-    --forget_scaling_coef 1 \
-    --retain_scaling_coef 0.5 \
-    --do_train \
-    --seed $s \
+    --forget_scaling_coef $fsc \
+    --retain_scaling_coef $rsc \
+    --seed $seed \
+    --wandb_mode disabled \
     --dp_strategy $dp_strategy \
     --bf16 \
     --optimizer adamw \
     --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio $warmup_ratio \
+    --warmup_ratio 0 \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
-    --gradient_accumulation_steps $((32 / batch_size / world_size)) \
+    --gradient_accumulation_steps $((32 / world_size / batch_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
-    --max_tolerance 30 \
+    --max_tolerance 5 \
     --output_dir ".checkpoints/" \
     --do_test
-done
-done
 done

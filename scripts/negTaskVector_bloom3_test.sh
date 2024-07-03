@@ -5,30 +5,35 @@ IFS=$'\n\t'
 
 method="negtaskvector"
 
-task="flores"
-langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
-max_length=125
-# task="bmlama53"
-# langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
-# max_length=32
-
+# task="flores"
+# langs=("en" "fr" "es" "zh" "ar" "vi" "eu" "ur" "te" "sw")
+# max_length=125
+task="bmlama53"
+langs=("en" "fr" "es" "pt" "ar" "vi" "ca" "hi" "bn")
+max_length=32
 
 world_size=1
-batch_size=16
-dp_strategy="auto"
+batch_size=32
 
+wr="0"
 
-seed=42
-learning_rate=("1e-5")
-scaling_coef=("0.3 0" "0.2 0" "0.1 0" "0.08 0" "0.06 0" "0.04 0" "0.02 0" "1 0.7" "1 0.6" "1 0.5" "1 0.4")
+# seed=("485")
+seed=("42")
+lr="1e-5"
 
-for lr in "${learning_rate[@]}"; do
+# scaling_coef=("1 0.5" "1 0.6" "1 0.4")
+# scaling_coef+=("0.3 0.2" "0.2 0.15" "1 0.7")
+scaling_coef=("0.02 0" "0.04 0" "0.06 0" "0.08 0" "0.1 0")
+scaling_coef+=("0.2 0" "0.3 0")
+
 for sc in "${scaling_coef[@]}"; do
+for s in "${seed[@]}"; do
 IFS=' ' read -r fsc rsc <<< "$sc"
-echo "Learning Rate: $lr, Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
+echo "Running bloom-3b $task"
+echo "Forget Scaling Coefficient: $fsc, Retain Scaling Coefficient: $rsc"
 python run.py \
-    --model_name xglm-2.9B \
-    --model facebook/xglm-2.9B \
+    --model_name bloom-3b \
+    --model bigscience/bloom-3b \
     --method $method \
     --cache_dir ../.cache \
     --task $task \
@@ -41,22 +46,22 @@ python run.py \
     --data_dir ../../research/multilingual-unlearning/data/ \
     --forget_scaling_coef $fsc \
     --retain_scaling_coef $rsc \
-    --seed $seed \
+    --seed $s \
     --wandb_mode disabled \
     --dp_strategy auto \
     --bf16 \
     --optimizer adamw \
     --learning_rate $lr \
     --lr_scheduler_type linear \
-    --warmup_ratio 0 \
+    --warmup_ratio $wr \
     --epochs 30 \
     --world_size $world_size \
     --per_device_batch_size $batch_size \
-    --gradient_accumulation_steps $((16 / batch_size)) \
+    --gradient_accumulation_steps $((32 / world_size / batch_size)) \
     --logging_steps 32 \
     --eval_steps 1 \
     --max_tolerance 5 \
     --output_dir ".checkpoints/" \
-    --do_eval
+    --do_test
 done
 done

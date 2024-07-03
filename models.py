@@ -10,6 +10,7 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from pytorch_lightning.core.saving import save_hparams_to_yaml
 
 from datamodules import XNLIDataModule, FLORESDataModule, BMLAMADataModule
+from utils import installed_cuda_version
 
 logging.get_logger("transformers").setLevel(logging.ERROR)
 
@@ -199,12 +200,16 @@ class MultilingualModel(L.LightningModule):
         return self.accuracy(preds, labels)
 
     def configure_optimizers(self):
-        if "deepspeed" in self.hparams.dp_strategy and "offload" not in self.hparams.dp_strategy:
+        cuda_major, cuda_minor = installed_cuda_version()
+        supported_cuda = (cuda_major == 11 and cuda_minor >= 1) or cuda_major > 11
+        if "deepspeed" in self.hparams.dp_strategy and "offload" not in self.hparams.dp_strategy and supported_cuda:
             optimizer = deepspeed.ops.adam.FusedAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
                                 adam_w_mode=(self.hparams.optimizer == "adamw")) 
-        elif "deepspeed" in self.hparams.dp_strategy and "offload" in self.hparams.dp_strategy:
+        elif "deepspeed" in self.hparams.dp_strategy and "offload" in self.hparams.dp_strategy and supported_cuda:
             optimizer = deepspeed.ops.adam.DeepSpeedCPUAdam(self.model.parameters(), lr=self.hparams.learning_rate, weight_decay=0.01, 
                                 adamw_mode=(self.hparams.optimizer == "adamw"))
+        elif "deepseed" in self.hparams.dp_strategy and self.hparams.dp_strategy != "deepspeed": # ?? 왜 안들어감?
+            raise ValueError(f'DeepSpeed strategy {self.hparams.dp_strategy} not supported. Use deepspeed config file. <"zero_force_ds_cpu_optimizer": false>')
         elif self.hparams.optimizer == "adam":
             optimizer = torch.optim.Adam(self.model.parameters(), lr=self.hparams.learning_rate)
         elif self.hparams.optimizer == "adamw":
